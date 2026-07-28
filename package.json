@@ -1,0 +1,16 @@
+{
+  "name": "klinpi",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/Arav-Menon/klinPi",
+  "author": "Arav-menon",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
