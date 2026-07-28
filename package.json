@@ -7,7 +7,8 @@
   "license": "MIT",
   "private": false,
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "studio:dev": "cd packages/studio && yarn dev"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
