@@ -51,6 +51,8 @@ Our goal is to make them smarter, more efficient, and accessible for every devel
 
 ## Architecture
 
+
+
 ## *Diagram and detailed architecture docs coming soon.*
 
 ### Development
