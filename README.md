@@ -1,6 +1,7 @@
 <div align="center" >
 <img src="./public/assets/banner.png" />
 
+****
 [![Status](https://img.shields.io/badge/status-in%20development-orange?style=for-the-badge)]()
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)]()
 </div>
