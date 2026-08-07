@@ -9,18 +9,6 @@
   --font-mono: "Geist Mono", "SF Mono", "Fira Code", monospace;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  background-color: #050505;
-  color: #ffffff;
-  font-family: "Inter", sans-serif;
-}
-
 ::selection {
   background-color: rgba(255, 255, 255, 0.15);
   color: #ffffff;
@@ -78,4 +66,28 @@ body {
     rgba(255, 255, 255, 0.05) 0%,
     transparent 100%
   );
+}
+
+@keyframes glow-dot {
+  0%   { left: 0;    opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+@keyframes glow-dot-vertical {
+  0%   { top: 0;    opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
