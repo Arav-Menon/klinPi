@@ -22,12 +22,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="relative min-h-full bg-background font-sans text-foreground overflow-x-hidden">
-        {/* Gradient layers */}
         <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-primary" />
         <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-secondary" />
-        {/* Grid overlay */}
         <div className="pointer-events-none fixed inset-0 -z-10 bg-grid" />
-        {/* Noise texture */}
         <div className="pointer-events-none fixed inset-0 -z-10 bg-noise opacity-50" />
         {children}
       </body>
