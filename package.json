@@ -1,17 +1,30 @@
 {
   "name": "klinpi",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
   "repository": "https://github.com/Arav-Menon/klinPi",
   "author": "Arav-menon",
   "license": "MIT",
-  "private": false,
   "scripts": {
     "test": "vitest",
-    "studio:dev": "cd packages/studio && yarn dev"
+    "dev:studio": "cd packages/studio && pnpm dev",
+    "dev:gateway": "cd packages/gateway pnpm run dev",
+    "studio:dev": "pnpm --filter @klinpi/studio dev",
+    "studio:build": "pnpm --filter @klinpi/studio build",
+    "studio:lint": "pnpm --filter @klinpi/studio lint",
+    "prisma:generate": "pnpm --filter @klinpi/prisma exec prisma generate",
+    "prisma:migrate": "pnpm --filter @klinpi/prisma exec prisma migrate dev"
   },
   "devDependencies": {
+    "prisma": "^7.9.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
   }
 }
