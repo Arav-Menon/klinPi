@@ -1,96 +1,81 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-background: #000000;
+  --color-background: #050505;
   --color-foreground: #ffffff;
-  --color-muted: #757575;
-  --color-surface: #222222;
-  --color-border: #a9a9a9;
-  --font-sans: "Raleway", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --color-muted: #8b8b8b;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", "Fira Code", monospace;
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.8s ease-out forwards;
-}
-
-.animate-fade-in-delay-1 {
-  animation: fade-in 0.8s ease-out 0.15s forwards;
-  opacity: 0;
-}
-
-.animate-fade-in-delay-2 {
-  animation: fade-in 0.8s ease-out 0.3s forwards;
-  opacity: 0;
-}
-
-.animate-fade-in-delay-3 {
-  animation: fade-in 0.8s ease-out 0.45s forwards;
-  opacity: 0;
-}
-
-.animate-fade-in-delay-4 {
-  animation: fade-in 0.8s ease-out 0.6s forwards;
-  opacity: 0;
-}
-
-.animate-fade-in-delay-5 {
-  animation: fade-in 0.8s ease-out 0.75s forwards;
-  opacity: 0;
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-fade-in,
-  .animate-fade-in-delay-1,
-  .animate-fade-in-delay-2,
-  .animate-fade-in-delay-3,
-  .animate-fade-in-delay-4,
-  .animate-fade-in-delay-5,
-  .animate-float,
-  .animate-pulse-glow {
-    animation: none;
-    opacity: 1;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-  background-color: #000000;
-  font-family: "Raleway", sans-serif;
+  background-color: #050505;
+  color: #ffffff;
+  font-family: "Inter", sans-serif;
+}
+
+::selection {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .container {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+}
+
+.bg-gradient-primary {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(120, 100, 255, 0.06) 0%,
+    rgba(80, 60, 200, 0.03) 40%,
+    transparent 70%
+  );
+}
+
+.bg-gradient-secondary {
+  background: radial-gradient(
+    ellipse 60% 40% at 50% 20%,
+    rgba(100, 140, 255, 0.04) 0%,
+    transparent 60%
+  );
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.02'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+.bg-glow-hero {
+  background: radial-gradient(
+    ellipse 60% 40% at 50% 35%,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 100%
+  );
 }
