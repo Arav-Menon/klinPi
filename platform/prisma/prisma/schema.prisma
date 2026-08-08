@@ -7,24 +7,105 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TaskState {
+  RUNNING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  apiKeys   ApiKey[]
-  sessions  Session[]
-  budgets   Budget?
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  apiKeys      ApiKey[]
+  sessions     Session[]
+  budget       Budget?
 }
 
 model ApiKey {
   id         String    @id @default(cuid())
   keyHash    String    @unique
+  keyPrefix  String
   name       String
   enabled    Boolean   @default(true)
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
   userId     String
   user       User      @relation(fields: [userId], references: [id])
+}
+
+model Session {
+  id           String   @id
+  userId       String
+  currentModel String?
+  currentTask  String?
+  provider     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id])
+  tasks        Task[]
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  sessionId   String
+  prompt      String
+  state       TaskState
+  model       String?
+  provider    String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  session     Session   @relation(fields: [sessionId], references: [id])
+  usages      Usage[]
+}
+
+model Budget {
+  id           String @id @default(cuid())
+  weeklyLimit  Float
+  monthlyLimit Float
+  weeklySpent  Float  @default(0)
+  monthlySpent Float  @default(0)
+  userId       String @unique
+  user         User   @relation(fields: [userId], references: [id])
+}
+
+model Usage {
+  id           String   @id @default(cuid())
+  sessionId    String?
+  provider     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  cost         Float
+  latency      Int
+  createdAt    DateTime @default(now())
+  task         Task?    @relation(fields: [taskId], references: [id])
+  taskId       String?
+}
+
+model Provider {
+  id       String  @id @default(cuid())
+  name     String
+  enabled  Boolean
+  priority Int
+  models   Model[]
+}
+
+model Model {
+  id                String   @id @default(cuid())
+  providerId        String
+  name              String
+  contextWindow     Int
+  supportsTools     Boolean
+  supportsVision    Boolean
+  supportsStreaming Boolean
+  costInput         Float
+  costOutput        Float
+  enabled           Boolean
+  provider          Provider @relation(fields: [providerId], references: [id])
 }
