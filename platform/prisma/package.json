@@ -8,7 +8,7 @@
     "build": "tsc -b",
     "generate": "pnpm prisma generate",
     "migrate": "pnpm prisma migrate dev",
-    "studio": "prisma studio"
+    "studio": "pnpm prisma studio"
   },
   "exports": {
     ".": "./dist/index.js"
