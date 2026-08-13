@@ -8,22 +8,39 @@ datasource db {
 }
 
 enum TaskState {
+  PENDING
   RUNNING
+  WAITING_FOR_TOOL
   COMPLETED
   CANCELLED
   FAILED
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  TOOL_CALL
+  TOOL_RESULT
+  ERROR
+}
+
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  apiKeys      ApiKey[]
-  sessions     Session[]
-  budget       Budget?
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  apiKeys  ApiKey[]
+  sessions Session[]
+  budget   Budget?
 }
 
 model ApiKey {
@@ -35,34 +52,66 @@ model ApiKey {
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
   revokedAt  DateTime?
-  userId     String
-  user       User      @relation(fields: [userId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model Session {
-  id           String   @id
-  userId       String
-  currentModel String?
-  currentTask  String?
-  provider     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id])
-  tasks        Task[]
-  s
+  id     String @id
+  userId String
+
+  currentTask String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id])
+  tasks  Task[]
+  usages Usage[]
+
+  @@index([userId])
 }
 
 model Task {
-  id          String    @id @default(cuid())
-  sessionId   String
-  prompt      String
-  state       TaskState
-  model       String?
-  provider    String?
+  id        String @id @default(cuid())
+  sessionId String
+  prompt    String
+
+  state TaskState @default(PENDING)
+
+  currentModel    String?
+  currentProvider String?
+
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   completedAt DateTime?
-  session     Session   @relation(fields: [sessionId], references: [id])
-  usages      Usage[]
+
+  session  Session   @relation(fields: [sessionId], references: [id])
+  messages Message[]
+  usages   Usage[]
+
+  @@index([sessionId])
+  @@index([sessionId, state])
+}
+
+model Message {
+  id         String      @id @default(cuid())
+  taskId     String
+  role       MessageRole
+  type       MessageType
+  content    Json
+  toolCallId String?
+  toolName   String?
+  sequence   Int
+  createdAt  DateTime    @default(now())
+  task       Task        @relation(fields: [taskId], references: [id])
+
+  @@unique([taskId, sequence])
+  @@index([taskId, createdAt])
+  @@index([toolCallId])
 }
 
 model Budget {
@@ -77,7 +126,8 @@ model Budget {
 
 model Usage {
   id           String   @id @default(cuid())
-  sessionId    String?
+  sessionId    String
+  taskId       String
   provider     String
   model        String
   inputTokens  Int
@@ -85,16 +135,21 @@ model Usage {
   cost         Float
   latency      Int
   createdAt    DateTime @default(now())
-  task         Task?    @relation(fields: [taskId], references: [id])
-  taskId       String?
+  session      Session  @relation(fields: [sessionId], references: [id])
+  task         Task     @relation(fields: [taskId], references: [id])
+
+  @@index([sessionId])
+  @@index([taskId])
+  @@index([createdAt])
 }
 
 model Provider {
   id       String  @id @default(cuid())
-  name     String
-  enabled  Boolean
-  priority Int
-  models   Model[]
+  name     String  @unique
+  enabled  Boolean @default(true)
+  priority Int     @default(0)
+
+  models Model[]
 }
 
 model Model {
@@ -102,11 +157,14 @@ model Model {
   providerId        String
   name              String
   contextWindow     Int
-  supportsTools     Boolean
-  supportsVision    Boolean
-  supportsStreaming Boolean
+  supportsTools     Boolean  @default(false)
+  supportsVision    Boolean  @default(false)
+  supportsStreaming Boolean  @default(false)
   costInput         Float
   costOutput        Float
-  enabled           Boolean
+  enabled           Boolean  @default(true)
   provider          Provider @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, name])
+  @@index([providerId])
 }
