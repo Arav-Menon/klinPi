@@ -1,67 +1,112 @@
-<div align="center" >
-<img src="./public/assets/banner.png" />
+<p align="center">
+  <img src="./public/assets/banner.png" alt="KlinPi banner" width="100%" />
+</p>
 
-****
-[![Status](https://img.shields.io/badge/status-in%20development-orange?style=for-the-badge)]()
-[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)]()
-</div>
-Klinpi is an AI gateway that sits between your coding tools and LLM providers. Instead of routing every request to the same model, it intelligently distributes work based on task complexity, team policies, cost, and performance constraints. The result: lower API costs without changing how your team works.
+<p align="center">
+  <img src="https://img.shields.io/badge/status-in%20development-orange" alt="status" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="license" />
+  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node" />
+</p>
 
-This is not a coding assistant. It's infrastructure for coding assistants—a router that lives in the middle and makes routing decisions so you don't have to make them manually.
+# KlinPi
 
-## Why Klinpi?
+**KlinPi** is an cloud coding agent — think of it as a self-hostable, hackable take on Devin. It runs in a sandboxed
+cloud environment, takes a task description, and autonomously plans, writes, tests, and iterates on code in a real dev
+environment (its own shell, file system, and browser) until the task is done.
 
-The problem: using a single LLM for every task wastes money. Writing a function description doesn't need GPT-4-level reasoning. A search query doesn't need a 128K context window. But detecting what task you're actually doing—and routing it to the right model—requires logic that doesn't exist in most setups.
+This project is in active early development. Expect breaking changes.
 
-Klinpi solves this by:
+## Why KlinPi
 
-- **Routing based on task type.** Simple completion goes to a fast, cheap model. Complex reasoning goes somewhere with better performance. The decision happens automatically.
-- **Enforcing team policies.** Set rules per team, per project, per file type. "Don't use external LLMs for this codebase." "Use local models for customer data." "Claude for security work, GPT for everything else."
-- **Tracking cost and performance.** Know how much you're spending per model, per task type, per team. Adjust routing based on real metrics.
-- **Reducing manual decisions.** Your developers don't think about model selection. They hit the same request button. Klinpi decides.
+Most "AI coding agent" demos are thin wrappers around a single API call. KlinPi is built as actual infrastructure:
 
-## Our Philosophy
+- **Full sandboxed workspace** — each agent run gets its own isolated environment with a shell, filesystem, and package
+  manager, not just a chat window.
+- **Model-agnostic routing** — swap the underlying LLM per task without rewriting the agent loop.
+- **Observable by default** — every tool call, file diff, and shell command the agent makes is logged and replayable.
+- **Self-hostable** — run it on your own infra with Docker, no vendor lock-in.
 
-We don't believe every task deserves the biggest model.
+## Tech Stack
 
-Most AI coding tools treat every prompt the same, sending everything to expensive models regardless of complexity. We think that's wasteful.
+| Layer               | Technology                                               |
+|---------------------|----------------------------------------------------------|
+| Language            | TypeScript                                               |
+| Runtime             | Node.js 20+                                              |
+| Testing             | [Vitest](https://vitest.dev/)                            |
+| Agent orchestration | Custom TS agent loop (tool-calling, planning, execution) |
+| Sandbox execution   | Docker containers per agent session                      |
+| API layer           | Node HTTP server (REST)                                  |
+| Package manager     | pnpm                                                     |
 
-Klinpi is built around a simple idea:
+## Getting Started
 
-> **Use the right model for the right task.**
+### Prerequisites
 
-Simple edits shouldn't cost premium tokens.
-Complex reasoning shouldn't be limited by cheaper models.
+- [Docker](https://www.docker.com/) and Docker Compose
+- Node.js 20+ (only needed for local dev outside Docker)
+- pnpm (`npm install -g pnpm`)
 
-By understanding the intent behind every request, Klinpi intelligently routes work to the model that provides the best balance of quality, speed, and cost.
+### Run with Docker (recommended)
 
-Our goal isn't to replace coding agents.
+This is the fastest way to get KlinPi running end-to-end, including the sandbox runner.
 
-Our goal is to make them smarter, more efficient, and accessible for every developer and every team.
+```bash
+git clone https://github.com/<your-username>/klinpi.git
+cd klinpi
+cp .env.example .env   # add your model provider API key(s)
 
-## Planned Features
+docker compose up --build
+```
 
-- **Smart model routing** — Route based on task complexity, language, file type
-- **Policy engine** — Team and project-level routing rules
-- **Cost optimization** — Automatic routing to minimize spend while maintaining quality
-- **Budget limits** — Per-team, per-project spend caps
-- **Multi-provider support** — Claude, GPT-4, local models, custom endpoints
-- **Usage analytics** — Track cost, latency, and model performance per team
-- **Caching layer** — Reduce redundant requests across team
-- **Team management** — Policies, budget allocation, audit logs
+The agent API will be available at `http://localhost:3000`.
 
-## Architecture
+To stop:
 
+```bash
+docker compose down
+```
 
+### Run locally (without Docker)
 
-## *Diagram and detailed architecture docs coming soon.*
+```bash
+git clone https://github.com/<your-username>/klinpi.git
+cd klinpi
+pnpm install
+cp .env.example .env
 
-### Development
+pnpm dev
+```
 
+### Run tests
 
+```bash
+pnpm test
+```
 
-Placeholder. Will include:
-- Local development environment
-- Running tests
-- Building from source
-- Extending with custom policies
+Test setup and config live in `vitest.config.ts`.
+
+## Project Structure
+
+```
+klinpi/
+├── packages/
+│   ├── gateway/        # Express backend (auth, API routes, middleware)
+│   └── studio/         # Next.js frontend (landing page, auth UI)
+├── platform/
+│   └── prisma/         # Database schema, migrations, generated client
+├── tests/
+│   ├── gateway/        # Gateway integration tests
+│   └── studio/         # Studio tests
+├── dockerfile/         # Container build
+├── infra/              # Infrastructure config (Prometheus)
+├── scripts/            # Setup scripts
+├── docker-compose.yml
+└── vitest.config.ts
+```
+
+## Roadmap
+
+- [ ] Persistent agent memory across sessions
+- [ ] Browser tool for the agent's sandbox
+- [ ] Web UI for monitoring live agent runs
+- [ ] Multi-agent task delegation
