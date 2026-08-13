@@ -38,25 +38,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  apiKeys  ApiKey[]
   sessions Session[]
   budget   Budget?
-}
-
-model ApiKey {
-  id         String    @id @default(cuid())
-  keyHash    String    @unique
-  keyPrefix  String
-  name       String
-  enabled    Boolean   @default(true)
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-  revokedAt  DateTime?
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  @@index([userId])
 }
 
 model Session {
