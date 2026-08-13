@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./modules/routes/auth.routes.js";
-import apikeysRoutes from "./modules/routes/apikeys.routes.js";
 import agentRoutes from "./modules/routes/agent.routes.js";
 
 const app: ReturnType<typeof express> = express();
@@ -19,7 +18,6 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/keys", apikeysRoutes);
 app.use("/api/v1/agent", agentRoutes);
 
 export default app;
