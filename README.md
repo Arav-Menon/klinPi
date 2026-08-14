@@ -91,7 +91,10 @@ Test setup and config live in `vitest.config.ts`.
 klinpi/
 ├── packages/
 │   ├── gateway/        # Express backend (auth, API routes, middleware)
-│   └── studio/         # Next.js frontend (landing page, auth UI)
+│   ├── studio/         # Next.js frontend (landing page, auth UI)
+│   ├── runtime/        # Agent runtime environment
+│   ├── compute/        # Compute layer
+│   └── realtime/       # WebSocket server
 ├── platform/
 │   └── prisma/         # Database schema, migrations, generated client
 ├── tests/
