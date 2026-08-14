@@ -9,7 +9,7 @@
   "scripts": {
     "test": "vitest",
     "dev:studio": "cd packages/studio && pnpm dev",
-    "dev:gateway": "cd packages/gateway pnpm run dev",
+    "dev:gateway": "cd packages/gateway && pnpm run dev",
     "studio:dev": "pnpm --filter @klinpi/studio dev",
     "studio:build": "pnpm --filter @klinpi/studio build",
     "studio:lint": "pnpm --filter @klinpi/studio lint",
@@ -17,11 +17,13 @@
     "prisma:migrate": "pnpm --filter @klinpi/prisma exec prisma migrate dev"
   },
   "devDependencies": {
-    "prisma": "^7.9.1",
-    "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.1.2"
+    "@types/node": "^26.1.2",
+    "@types/supertest": "^7.2.1",
+    "prisma": "^7.9.1",
+    "supertest": "^7.2.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

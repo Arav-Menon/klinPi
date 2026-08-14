@@ -39,9 +39,9 @@ export default function Hero() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.14, ease: EASE }}
-          className="mx-auto max-w-2xl text-4xl font-black tracking-tight text-white sm:text-5xl md:text-6xl md:leading-[0.9]"
+          className="mx-auto max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl md:leading-[0.9]"
         >
-          The Intelligent Routing Layer for AI Engineering Teams.
+          Your AI Software Engineer, Running in the Cloud.
         </motion.h1>
 
         <div className="h-6" />
@@ -52,8 +52,8 @@ export default function Hero() {
           transition={{ duration: 0.8, delay: 0.2, ease: EASE }}
           className="mx-auto max-w-lg text-base leading-relaxed text-[#8b8b8b]"
         >
-          Automatically routes every AI request to the best model based on task
-          complexity, context and cost.
+          Klinpi gives AI agents a real development environment to build, debug,
+          test, and ship software for you.
         </motion.p>
 
         <div className="h-10" />

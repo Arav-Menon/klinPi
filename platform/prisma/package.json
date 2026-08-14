@@ -5,11 +5,16 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "generate": "prisma generate",
-    "migrate": "prisma migrate dev",
-    "studio": "prisma studio"
+    "build": "tsc -b",
+    "generate": "pnpm prisma generate",
+    "migrate": "pnpm prisma migrate dev",
+    "studio": "pnpm prisma studio"
+  },
+  "exports": {
+    ".": "./dist/index.js"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1"
   },
   "devDependencies": {

@@ -7,24 +7,147 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  apiKeys   ApiKey[]
-  sessions  Session[]
-  budgets   Budget?
+enum TaskState {
+  PENDING
+  RUNNING
+  WAITING_FOR_TOOL
+  COMPLETED
+  CANCELLED
+  FAILED
 }
 
-model ApiKey {
-  id         String    @id @default(cuid())
-  keyHash    String    @unique
-  name       String
-  enabled    Boolean   @default(true)
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id])
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  TOOL_CALL
+  TOOL_RESULT
+  ERROR
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+  budget   Budget?
+}
+
+model Session {
+  id     String @id
+  userId String
+
+  currentTask String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id])
+  tasks  Task[]
+  usages Usage[]
+
+  @@index([userId])
+}
+
+model Task {
+  id        String @id @default(cuid())
+  sessionId String
+  prompt    String
+
+  state TaskState @default(PENDING)
+
+  currentModel    String?
+  currentProvider String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  session  Session   @relation(fields: [sessionId], references: [id])
+  messages Message[]
+  usages   Usage[]
+
+  @@index([sessionId])
+  @@index([sessionId, state])
+}
+
+model Message {
+  id         String      @id @default(cuid())
+  taskId     String
+  role       MessageRole
+  type       MessageType
+  content    Json
+  toolCallId String?
+  toolName   String?
+  sequence   Int
+  createdAt  DateTime    @default(now())
+  task       Task        @relation(fields: [taskId], references: [id])
+
+  @@unique([taskId, sequence])
+  @@index([taskId, createdAt])
+  @@index([toolCallId])
+}
+
+model Budget {
+  id           String @id @default(cuid())
+  weeklyLimit  Float
+  monthlyLimit Float
+  weeklySpent  Float  @default(0)
+  monthlySpent Float  @default(0)
+  userId       String @unique
+  user         User   @relation(fields: [userId], references: [id])
+}
+
+model Usage {
+  id           String   @id @default(cuid())
+  sessionId    String
+  taskId       String
+  provider     String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  cost         Float
+  latency      Int
+  createdAt    DateTime @default(now())
+  session      Session  @relation(fields: [sessionId], references: [id])
+  task         Task     @relation(fields: [taskId], references: [id])
+
+  @@index([sessionId])
+  @@index([taskId])
+  @@index([createdAt])
+}
+
+model Provider {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  enabled  Boolean @default(true)
+  priority Int     @default(0)
+
+  models Model[]
+}
+
+model Model {
+  id                String   @id @default(cuid())
+  providerId        String
+  name              String
+  contextWindow     Int
+  supportsTools     Boolean  @default(false)
+  supportsVision    Boolean  @default(false)
+  supportsStreaming Boolean  @default(false)
+  costInput         Float
+  costOutput        Float
+  enabled           Boolean  @default(true)
+  provider          Provider @relation(fields: [providerId], references: [id])
+
+  @@unique([providerId, name])
+  @@index([providerId])
 }

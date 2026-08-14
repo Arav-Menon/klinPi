@@ -4,67 +4,16 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePrefersReducedMotion } from "../lib/hooks";
 
-interface Request {
-  text: string;
-  task: string;
-  complexity: string;
-  tools: boolean;
-  model: string;
-  cost: string;
-}
-
-const requests: Request[] = [
-  {
-    text: '"Fix auth.ts line 38"',
-    task: "Coding",
-    complexity: "Medium Context",
-    tools: true,
-    model: "Claude Sonnet",
-    cost: "$0.12",
-  },
-  {
-    text: '"Summarize README"',
-    task: "Documentation",
-    complexity: "Low Context",
-    tools: false,
-    model: "GPT-5 Mini",
-    cost: "$0.003",
-  },
-  {
-    text: '"Translate this article"',
-    task: "Translation",
-    complexity: "Low Context",
-    tools: false,
-    model: "Gemini Flash",
-    cost: "$0.001",
-  },
-  {
-    text: '"Generate SQL Migration"',
-    task: "Code Generation",
-    complexity: "Medium Context",
-    tools: true,
-    model: "DeepSeek",
-    cost: "$0.004",
-  },
-];
-
-type Phase = "incoming" | "analyzing" | "routing" | "completed" | "pause";
+type Phase = "working" | "running" | "completed" | "pause";
 
 const phaseDurations: Record<Phase, number> = {
-  incoming: 1800,
-  analyzing: 2200,
-  routing: 1800,
+  working: 2000,
+  running: 2500,
   completed: 1500,
   pause: 500,
 };
 
-const phaseOrder: Phase[] = [
-  "incoming",
-  "analyzing",
-  "routing",
-  "completed",
-  "pause",
-];
+const phaseOrder: Phase[] = ["working", "running", "completed", "pause"];
 
 function CheckIcon() {
   return (
@@ -91,14 +40,13 @@ function CheckIcon() {
 
 export default function RoutingSimulation() {
   const reduced = usePrefersReducedMotion();
-  const [requestIdx, setRequestIdx] = useState(0);
-  const [phase, setPhase] = useState<Phase>("incoming");
+  const [phase, setPhase] = useState<Phase>("working");
 
   const advancePhase = useCallback(() => {
     setPhase((current) => {
       const idx = phaseOrder.indexOf(current);
       if (idx < phaseOrder.length - 1) return phaseOrder[idx + 1];
-      return "incoming";
+      return "working";
     });
   }, []);
 
@@ -106,18 +54,11 @@ export default function RoutingSimulation() {
     if (reduced) return;
 
     const timeout = setTimeout(() => {
-      if (phase === "pause") {
-        setRequestIdx((prev) => (prev + 1) % requests.length);
-        setPhase("incoming");
-      } else {
-        advancePhase();
-      }
+      advancePhase();
     }, phaseDurations[phase]);
 
     return () => clearTimeout(timeout);
   }, [phase, advancePhase, reduced]);
-
-  const req = requests[requestIdx];
 
   if (reduced) {
     return (
@@ -125,11 +66,11 @@ export default function RoutingSimulation() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-wider text-white/40">
-              Routing to
+              Working on
             </p>
-            <p className="mt-1 font-semibold text-white">{req.model}</p>
+            <p className="mt-1 font-semibold text-white">Your GitHub Repository</p>
           </div>
-          <p className="text-sm text-[#8b8b8b]">{req.cost}</p>
+          <p className="text-sm text-emerald-400">$ Agent is running</p>
         </div>
       </div>
     );
@@ -138,9 +79,9 @@ export default function RoutingSimulation() {
   return (
     <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0a0a0a] text-left" style={{ height: "100px", position: "relative" }}>
       <AnimatePresence mode="wait">
-        {phase === "incoming" && (
+        {phase === "working" && (
           <motion.div
-            key={`incoming-${requestIdx}`}
+            key="working"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -148,58 +89,15 @@ export default function RoutingSimulation() {
             className="absolute inset-0 p-6"
           >
             <p className="text-xs uppercase tracking-wider text-white/40">
-              Incoming Request
+              Working on
             </p>
-            <p className="mt-2 font-mono text-lg text-white">{req.text}</p>
+            <p className="mt-2 font-mono text-lg text-white">Your GitHub Repository</p>
           </motion.div>
         )}
 
-        {phase === "analyzing" && (
+        {phase === "running" && (
           <motion.div
-            key={`analyzing-${requestIdx}`}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.4 }}
-            className="absolute inset-0 p-6"
-          >
-            <p className="text-xs uppercase tracking-wider text-white/40">
-              Analyzing...
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <motion.span
-                initial={{ opacity: 0, x: -4 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0 }}
-                className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-[#8b8b8b]"
-              >
-                ✓ {req.task}
-              </motion.span>
-              <motion.span
-                initial={{ opacity: 0, x: -4 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.08 }}
-                className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-[#8b8b8b]"
-              >
-                ✓ {req.complexity}
-              </motion.span>
-              {req.tools && (
-                <motion.span
-                  initial={{ opacity: 0, x: -4 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: 0.16 }}
-                  className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-[#8b8b8b]"
-                >
-                  ✓ Tool Calls Required
-                </motion.span>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {phase === "routing" && (
-          <motion.div
-            key={`routing-${requestIdx}`}
+            key="running"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -208,17 +106,20 @@ export default function RoutingSimulation() {
           >
             <div>
               <p className="text-xs uppercase tracking-wider text-white/40">
-                Routing to
+                Working on
               </p>
-              <p className="mt-1 font-semibold text-white">{req.model}</p>
+              <p className="mt-1 font-semibold text-white">Your GitHub Repository</p>
             </div>
-            <p className="text-sm text-[#8b8b8b]">{req.cost}</p>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+              <p className="text-sm text-emerald-400">$ Agent is running</p>
+            </div>
           </motion.div>
         )}
 
         {phase === "completed" && (
           <motion.div
-            key={`completed-${requestIdx}`}
+            key="completed"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -229,7 +130,7 @@ export default function RoutingSimulation() {
               <CheckIcon />
               <span className="text-sm font-medium text-white">Completed</span>
             </div>
-            <p className="text-sm text-[#8b8b8b]">{req.cost}</p>
+            <p className="text-sm text-[#8b8b8b]">Changes ready</p>
           </motion.div>
         )}
       </AnimatePresence>

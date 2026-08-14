@@ -16,10 +16,11 @@ export default function FinalCTA() {
           className="mx-auto max-w-lg text-center"
         >
           <h2 className="mb-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
-            Ready when Klinpi launches?
+            Your Code. Your Repository. Your Agent.
           </h2>
           <p className="mb-10 text-base text-[#8b8b8b]">
-            Be the first to know. Join the waitlist for early access.
+            Let Klinpi handle the engineering work while you focus on what to
+            build.
           </p>
 
           <div className="flex justify-center gap-4">
