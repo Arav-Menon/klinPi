@@ -6,23 +6,6 @@ import { usePrefersReducedMotion } from "../lib/hooks";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-const agents = [
-  "OpenCode",
-  "Claude Code",
-  "Codex",
-  "Cursor",
-  "Gemini CLI",
-  "Qwen Code",
-];
-
-const models = [
-  { name: "Claude", position: "top-0 left-[15%]" },
-  { name: "GPT-5", position: "top-0 right-[15%]" },
-  { name: "Gemini", position: "bottom-0 left-[10%]" },
-  { name: "DeepSeek", position: "bottom-0 right-[10%]" },
-  { name: "Qwen", position: "top-1/2 -translate-y-1/2 right-0" },
-];
-
 const cardClass =
   "rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm shadow-[0_0_40px_rgba(255,255,255,0.02)] p-5 transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.05]";
 
@@ -100,14 +83,17 @@ function Step1() {
   return (
     <div ref={ref} className={`${cardClass} w-full md:w-0 md:flex-1 md:min-w-0`}>
       <p className="mb-1 text-xs uppercase tracking-wider text-white/40">Step 1</p>
-      <h3 className="mb-1.5 text-sm font-semibold text-white">Paste your API Key</h3>
-      <p className="mb-4 text-xs text-[#8b8b8b]">Configure Klinpi once.</p>
+      <h3 className="mb-1.5 text-sm font-semibold text-white">Connect Your Repository</h3>
+      <p className="mb-4 text-xs text-[#8b8b8b]">Give Klinpi access to your GitHub repository.</p>
       <div className="rounded-lg bg-[#0a0a0a] p-3 font-mono text-xs leading-relaxed">
-        <span className="text-[#c084fc]">KLINPI_API_KEY</span>
-        <span className="text-white/40">=</span>
-        <span className="text-emerald-400">
-          <TypewriterText text="kp_xxx" trigger={inView} speed={50} />
-        </span>
+        <div>
+          <span className="text-[#c084fc]">GitHub Repository</span>
+        </div>
+        <div>
+          <span className="text-emerald-400">
+            <TypewriterText text="owner/project" trigger={inView} speed={50} />
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -120,21 +106,12 @@ function Step2() {
   return (
     <div ref={ref} className={`${cardClass} w-full md:w-0 md:flex-1 md:min-w-0`}>
       <p className="mb-1 text-xs uppercase tracking-wider text-white/40">Step 2</p>
-      <h3 className="mb-3 text-sm font-semibold text-white">Use Your Favorite terminal Agent</h3>
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {agents.map((agent) => (
-          <span
-            key={agent}
-            className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2.5 py-1 text-xs text-[#8b8b8b] transition-all duration-200 hover:scale-105 hover:border-white/[0.12] hover:text-white hover:shadow-[0_0_12px_rgba(255,255,255,0.06)]"
-          >
-            {agent}
-          </span>
-        ))}
-      </div>
+      <h3 className="mb-1.5 text-sm font-semibold text-white">Describe the Task</h3>
+      <p className="mb-4 text-xs text-[#8b8b8b]">Tell the agent what you want it to build or fix.</p>
       <div className="rounded-lg bg-[#0a0a0a] p-3 font-mono text-xs">
         <span className="text-white/40">&gt;&nbsp;</span>
         <span className="text-white">
-          <TypewriterText text="Fix auth.ts line 38" trigger={inView} speed={40} />
+          <TypewriterText text="Fix issue #12434" trigger={inView} speed={40} />
         </span>
       </div>
     </div>
@@ -145,34 +122,40 @@ function Step3() {
   const reduced = usePrefersReducedMotion();
   const [activeIdx, setActiveIdx] = useState(0);
 
+  const actions = [
+    { name: "Inspect", position: "top-0 left-[15%]" },
+    { name: "Code", position: "top-0 right-[15%]" },
+    { name: "Test", position: "bottom-0 left-[10%]" },
+    { name: "Browser", position: "bottom-0 right-[10%]" },
+  ];
+
   useEffect(() => {
     if (reduced) return;
     const interval = setInterval(() => {
-      setActiveIdx((prev) => (prev + 1) % models.length);
+      setActiveIdx((prev) => (prev + 1) % actions.length);
     }, 3000);
     return () => clearInterval(interval);
-  }, [reduced]);
+  }, [reduced, actions.length]);
 
   const floatVariants = [
     { y: [0, -6, 0], duration: 3.2 },
     { y: [0, -5, 0], duration: 3.8 },
     { y: [0, -7, 0], duration: 3.5 },
     { y: [0, -4, 0], duration: 4.0 },
-    { y: [0, -6, 0], duration: 3.6 },
   ];
 
   return (
     <div className={`${cardClass} w-full md:w-0 md:flex-1 md:min-w-0`}>
       <p className="mb-1 text-xs uppercase tracking-wider text-white/40">Step 3</p>
-      <h3 className="mb-3 text-sm font-semibold text-white">Klinpi Routes Everything</h3>
+      <h3 className="mb-3 text-sm font-semibold text-white">Klinpi Works</h3>
       <div className="relative mx-auto flex h-44 items-center justify-center">
         <div className="relative z-10 rounded-lg border border-white/[0.1] bg-white/[0.06] px-4 py-2 text-xs font-semibold text-white shadow-[0_0_30px_rgba(255,255,255,0.04)]">
           KLINPI
         </div>
-        {models.map((model, i) => (
+        {actions.map((action, i) => (
           <motion.div
-            key={model.name}
-            className={`absolute ${model.position} rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-500 ${
+            key={action.name}
+            className={`absolute ${action.position} rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-500 ${
               i === activeIdx
                 ? "border-white/20 bg-white/[0.08] text-white shadow-[0_0_16px_rgba(255,255,255,0.08)]"
                 : "border-white/[0.04] bg-white/[0.02] text-white/40"
@@ -189,14 +172,14 @@ function Step3() {
                   }
             }
           >
-            {model.name}
+            {action.name}
           </motion.div>
         ))}
         {!reduced && (
           <motion.div
             className="absolute h-px bg-gradient-to-r from-white/20 to-transparent"
             style={{ width: "40px", transformOrigin: "center" }}
-            animate={{ rotate: activeIdx * 72 - 90, opacity: [0.3, 0.8, 0.3] }}
+            animate={{ rotate: activeIdx * 90 - 90, opacity: [0.3, 0.8, 0.3] }}
             transition={{
               rotate: { duration: 0.5, ease: EASE },
               opacity: { duration: 2, repeat: Infinity, ease: "easeInOut" },
@@ -214,17 +197,16 @@ function Step4() {
   const reduced = usePrefersReducedMotion();
 
   const lines = [
-    { text: "✔ Fixed auth.ts", color: "text-emerald-400", delay: 0 },
-    { text: "Model: Claude Sonnet", color: "text-white", delay: 200 },
-    { text: "Latency: 1.2s", color: "text-[#8b8b8b]", delay: 400 },
-    { text: "Cost: $0.18", color: "text-[#8b8b8b]", delay: 600 },
+    { text: "✔ Issue fixed", color: "text-emerald-400", delay: 0 },
+    { text: "Tests passing", color: "text-white", delay: 200 },
+    { text: "Changes ready", color: "text-[#8b8b8b]", delay: 400 },
   ];
 
   return (
     <div ref={ref} className={`${cardClass} w-full md:w-0 md:flex-1 md:min-w-0`}>
       <p className="mb-1 text-xs uppercase tracking-wider text-white/40">Step 4</p>
-      <h3 className="mb-1.5 text-sm font-semibold text-white">Receive the Response</h3>
-      <p className="mb-4 text-xs text-[#8b8b8b]">Instantly.</p>
+      <h3 className="mb-1.5 text-sm font-semibold text-white">Get the Result</h3>
+      <p className="mb-4 text-xs text-[#8b8b8b]">Review the changes, tests, and final result.</p>
       <div className="rounded-lg bg-[#0a0a0a] p-3 font-mono text-xs space-y-1">
         {lines.map((line) => (
           <motion.div
@@ -257,13 +239,14 @@ export default function HowItWorks() {
           className="mx-auto mb-16 max-w-xl text-center"
         >
           <h2 className="mb-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Keep Coding.
+            Give It a Task.
             <br />
             Klinpi Handles the Rest.
           </h2>
           <p className="mx-auto max-w-md text-base text-[#8b8b8b]">
-            Your workflow doesn&apos;t change. Paste one API key and Klinpi
-            intelligently routes every request to the best model.
+            Connect your GitHub repository, describe what needs to be done, and
+            let Klinpi&apos;s cloud agent investigate, code, test, and verify the
+            changes.
           </p>
         </motion.div>
 
@@ -313,7 +296,7 @@ export default function HowItWorks() {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="mt-16 text-center text-sm text-[#8b8b8b]"
         >
-          One API. Every model. Zero manual routing.
+          Your Code. Your Repository. Your Agent.
         </motion.p>
       </div>
     </section>
