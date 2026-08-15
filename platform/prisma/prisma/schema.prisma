@@ -7,147 +7,283 @@ datasource db {
   provider = "postgresql"
 }
 
-enum TaskState {
-  PENDING
-  RUNNING
-  WAITING_FOR_TOOL
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum SessionStatus {
+  ACTIVE
+  PAUSED
   COMPLETED
-  CANCELLED
   FAILED
+  ARCHIVED
 }
 
 enum MessageRole {
   USER
   ASSISTANT
-  TOOL
   SYSTEM
+  TOOL
 }
 
-enum MessageType {
-  TEXT
-  TOOL_CALL
-  TOOL_RESULT
-  ERROR
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  WAITING_FOR_USER
+  COMPLETED
+  FAILED
+  CANCELLED
 }
+
+enum ToolCallStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum SandboxStatus {
+  CREATING
+  RUNNING
+  STOPPED
+  DESTROYED
+  FAILED
+}
+
+enum RepositoryProvider {
+  GITHUB
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String?
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String?
+  name         String?
+  avatarUrl    String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions Session[]
-  budget   Budget?
+  oauthAccounts OAuthAccount[]
+  sessions      AgentSession[]
+  repositories  Repository[]
 }
 
-model Session {
-  id     String @id
+// ─────────────────────────────────────────────
+// OAUTH
+// ─────────────────────────────────────────────
+
+model OAuthAccount {
+  id     String @id @default(cuid())
   userId String
 
-  currentTask String?
+  provider          String
+  providerAccountId String
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
 
-  user   User    @relation(fields: [userId], references: [id])
-  tasks  Task[]
-  usages Usage[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([provider, providerAccountId])
   @@index([userId])
 }
 
-model Task {
-  id        String @id @default(cuid())
-  sessionId String
-  prompt    String
+// ─────────────────────────────────────────────
+// REPOSITORY
+// ─────────────────────────────────────────────
 
-  state TaskState @default(PENDING)
+model Repository {
+  id     String @id @default(cuid())
+  userId String
 
-  currentModel    String?
-  currentProvider String?
+  provider       RepositoryProvider
+  providerRepoId String
+  owner          String
+  name           String
+  fullName       String
+  cloneUrl       String
+  defaultBranch  String
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  session  Session   @relation(fields: [sessionId], references: [id])
-  messages Message[]
-  usages   Usage[]
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions AgentSession[]
 
-  @@index([sessionId])
-  @@index([sessionId, state])
+  @@unique([provider, providerRepoId])
+  @@index([userId])
 }
+
+// ─────────────────────────────────────────────
+// AGENT SESSION
+// ─────────────────────────────────────────────
+
+model AgentSession {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String?
+
+  title  String?
+  status SessionStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  messages  Message[]
+  runs      AgentRun[]
+  sandboxes Sandbox[]
+
+  @@index([userId, updatedAt])
+  @@index([repositoryId])
+}
+
+// ─────────────────────────────────────────────
+// CHAT / AGENT MESSAGES
+// ─────────────────────────────────────────────
 
 model Message {
-  id         String      @id @default(cuid())
-  taskId     String
-  role       MessageRole
-  type       MessageType
-  content    Json
-  toolCallId String?
-  toolName   String?
-  sequence   Int
-  createdAt  DateTime    @default(now())
-  task       Task        @relation(fields: [taskId], references: [id])
+  id        String @id @default(cuid())
+  sessionId String
 
-  @@unique([taskId, sequence])
-  @@index([taskId, createdAt])
-  @@index([toolCallId])
+  role    MessageRole
+  content String
+
+  // Optional metadata:
+  // model, token usage, etc.
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  toolCalls ToolCall[]
+
+  @@index([sessionId, createdAt])
 }
 
-model Budget {
-  id           String @id @default(cuid())
-  weeklyLimit  Float
-  monthlyLimit Float
-  weeklySpent  Float  @default(0)
-  monthlySpent Float  @default(0)
-  userId       String @unique
-  user         User   @relation(fields: [userId], references: [id])
+// ─────────────────────────────────────────────
+// AGENT RUN
+// ─────────────────────────────────────────────
+
+model AgentRun {
+  id        String @id @default(cuid())
+  sessionId String
+
+  status AgentRunStatus @default(QUEUED)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  error String?
+
+  metadata Json?
+
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  toolCalls ToolCall[]
+  approvals Approval[]
+  createdAt DateTime   @default(now())
+
+  @@index([sessionId, createdAt])
 }
 
-model Usage {
-  id           String   @id @default(cuid())
-  sessionId    String
-  taskId       String
-  provider     String
-  model        String
-  inputTokens  Int
-  outputTokens Int
-  cost         Float
-  latency      Int
-  createdAt    DateTime @default(now())
-  session      Session  @relation(fields: [sessionId], references: [id])
-  task         Task     @relation(fields: [taskId], references: [id])
+// ─────────────────────────────────────────────
+// TOOL CALL
+// ─────────────────────────────────────────────
 
-  @@index([sessionId])
-  @@index([taskId])
-  @@index([createdAt])
+model ToolCall {
+  id        String  @id @default(cuid())
+  runId     String
+  messageId String?
+
+  toolName String
+
+  status ToolCallStatus @default(PENDING)
+
+  // Arguments sent to the tool
+  input Json
+
+  // Tool output
+  output Json?
+
+  error String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  run     AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([runId])
+  @@index([messageId])
 }
 
-model Provider {
-  id       String  @id @default(cuid())
-  name     String  @unique
-  enabled  Boolean @default(true)
-  priority Int     @default(0)
+// ─────────────────────────────────────────────
+// SANDBOX
+// ─────────────────────────────────────────────
 
-  models Model[]
+model Sandbox {
+  id        String @id @default(cuid())
+  sessionId String
+
+  // ID returned by E2B
+  providerSandboxId String @unique
+
+  provider String @default("e2b")
+
+  status SandboxStatus @default(CREATING)
+
+  // Repository state inside this sandbox
+  workspacePath String?
+
+  branchName String?
+  commitSha  String?
+
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime?
+  destroyedAt  DateTime?
+
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status])
 }
 
-model Model {
-  id                String   @id @default(cuid())
-  providerId        String
-  name              String
-  contextWindow     Int
-  supportsTools     Boolean  @default(false)
-  supportsVision    Boolean  @default(false)
-  supportsStreaming Boolean  @default(false)
-  costInput         Float
-  costOutput        Float
-  enabled           Boolean  @default(true)
-  provider          Provider @relation(fields: [providerId], references: [id])
+// ─────────────────────────────────────────────
+// USER APPROVALS
+// ─────────────────────────────────────────────
 
-  @@unique([providerId, name])
-  @@index([providerId])
+model Approval {
+  id    String @id @default(cuid())
+  runId String
+
+  toolName String
+
+  // What the agent wants permission to do
+  input Json
+
+  status ApprovalStatus @default(PENDING)
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, status])
 }
