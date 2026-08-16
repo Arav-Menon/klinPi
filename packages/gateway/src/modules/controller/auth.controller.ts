@@ -31,7 +31,7 @@ export async function signin(req: AuthenticatedRequest, res: Response) {
     }
 
     setAuthCookie(res, result.token);
-    res.json({ user: result.user });
+    res.status(200).json({ user: result.user });
   } catch (error) {
     console.error("Signin error:", error);
     res.status(500).json({ error: "Internal server error" });
