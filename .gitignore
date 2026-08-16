@@ -4,3 +4,13 @@ node_modules
 .env
 AGENTS.md
 readAgent.md
+
+platform/prisma/node_modules
+platform/prisma/dist
+platform/prisma/src/generated
+
+platform/redis/dist
+platform/redis/node_modules
+
+packages/gateway/node_modules
+packages/gateway/dist
