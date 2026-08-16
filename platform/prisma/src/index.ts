@@ -1,6 +1,8 @@
 import {PrismaClient} from "./generated/prisma/client.js";
 import {PrismaPg} from "@prisma/adapter-pg"
 
+export { SessionStatus } from "./generated/prisma/enums.js";
+
 let _prisma: PrismaClient | null = null;
 
 export function getPrisma(): PrismaClient {
