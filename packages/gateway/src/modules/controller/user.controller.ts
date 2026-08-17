@@ -1,7 +1,9 @@
 import type {Response} from "express";
 import type {AuthenticatedRequest} from "../auth/auth.types.js";
 import * as userService from "../services/user.service.js";
+import * as oauthService from "../services/oauth.service.js";
 import {clearAuthCookie} from "../../lib/jwt.js";
+import {prisma} from "../../lib/prisma.js";
 
 export async function getProfile(req: AuthenticatedRequest, res: Response) {
     try {
@@ -120,6 +122,43 @@ export async function deleteProfile(req: AuthenticatedRequest, res: Response) {
         res.json({message: "Account deleted successfully"});
     } catch (error) {
         console.error("Delete profile error:", error);
+        res.status(500).json({error: "Internal server error"});
+    }
+}
+
+export async function listRepos(req: AuthenticatedRequest, res: Response) {
+    try {
+        const userId = req.userId;
+        if (!userId) {
+            res.status(401).json({error: "Unauthorized"});
+            return;
+        }
+
+        const db = prisma();
+        const oauthAccount = await db.oAuthAccount.findFirst({
+            where: {
+                userId,
+                provider: "github",
+            },
+        });
+
+        if (!oauthAccount || !oauthAccount.accessToken) {
+            res.status(404).json({error: "GitHub account not connected"});
+            return;
+        }
+
+        const page = Number((req.query as Record<string, string>).page) || 1;
+        const perPage = Math.min(Number((req.query as Record<string, string>).per_page) || 30, 100);
+
+        const repos = await oauthService.getGitHubRepos(
+            oauthAccount.accessToken,
+            page,
+            perPage,
+        );
+
+        res.json({repos});
+    } catch (error) {
+        console.error("List repos error:", error);
         res.status(500).json({error: "Internal server error"});
     }
 }
