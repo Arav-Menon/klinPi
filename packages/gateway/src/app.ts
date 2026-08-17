@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import authRoutes from "./modules/routes/auth.routes.js";
 import userRoutes from "./modules/routes/user.routes.js";
 import sessionRoutes from "./modules/routes/session.routes.js";
+import oauthRoutes from "./modules/routes/oauth.routes.js";
 
 const app: ReturnType<typeof express> = express();
 
@@ -21,5 +22,6 @@ app.get("/health", (req, res) => {
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/user", userRoutes);
 app.use("/api/v1/sessions", sessionRoutes);
+app.use("/api/v1/oauth", oauthRoutes);
 
 export default app;
