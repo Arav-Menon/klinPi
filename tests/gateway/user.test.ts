@@ -22,7 +22,6 @@ async function createUserAndGetCookie(data: { email: string; name?: string }) {
     });
 
     const setCookieHeader = authResponse.headers["set-cookie"];
-    console.log(setCookieHeader)
     const cookieList = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
     const cookieValue = cookieList
         .find((c: string) => c.startsWith("klinpi_token="))
@@ -247,7 +246,7 @@ describe("PATCH /profile", () => {
         });
 
         const response = await request(app)
-            .patch("/api/v1/user/profile")s
+            .patch("/api/v1/user/profile")
             .set("Cookie", cookie)
             .send({
                 password: "brandnewpass123",
