@@ -12,5 +12,9 @@ platform/prisma/src/generated
 platform/redis/dist
 platform/redis/node_modules
 
+platform/common/node_modules
+platform/common/dist
+
 packages/gateway/node_modules
 packages/gateway/dist
+
