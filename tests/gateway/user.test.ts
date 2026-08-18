@@ -1,10 +1,19 @@
 import {beforeEach, describe, it, expect} from "vitest";
 import {prisma} from "../../packages/gateway/src/lib/prisma";
+import {createRedisClient} from "@klinpi/redis";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
 
 const PASSWORD_HASH = "$2b$12$IIJd6p1/RWRSgCes86FCx.PWnExawsl1Lh7n3ZjlhGItBUjXKwMEC";
 const PASSWORD = "password123";
+const redis = createRedisClient();
+
+async function flushRateLimitKeys() {
+    const keys = await redis.keys("limit:*");
+    if (keys.length > 0) {
+        await redis.del(...keys);
+    }
+}
 
 async function createUserAndGetCookie(data: { email: string; name?: string }) {
     const db = prisma();
@@ -49,6 +58,7 @@ describe("GET /profile", () => {
     beforeEach(async () => {
         const db = prisma();
         await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        await flushRateLimitKeys();
     });
 
     it("should return the authenticated user's profile", async () => {
@@ -85,6 +95,7 @@ describe("PUT /profile", () => {
     beforeEach(async () => {
         const db = prisma();
         await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        await flushRateLimitKeys();
     });
 
     it("should update name, email, and password", async () => {
@@ -202,6 +213,7 @@ describe("PATCH /profile", () => {
     beforeEach(async () => {
         const db = prisma();
         await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        await flushRateLimitKeys();
     });
 
     it("should update only the name", async () => {
@@ -328,6 +340,7 @@ describe("DELETE /profile", () => {
     beforeEach(async () => {
         const db = prisma();
         await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        await flushRateLimitKeys();
     });
 
     it("should delete the user account", async () => {
