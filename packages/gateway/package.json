@@ -12,6 +12,7 @@
   "keywords": [],
   "dependencies": {
     "@klinpi/prisma": "workspace:*",
+    "@klinpi/common": "workspace:*",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "bcrypt": "^5.1.1",
