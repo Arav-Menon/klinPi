@@ -1,8 +1,8 @@
-import { describe, it, beforeEach, expect } from "vitest";
+import {describe, it, beforeEach, expect} from "vitest";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
-import { prisma } from "../../packages/gateway/src/lib/prisma";
-import { createUser } from "../lib/factories/auth.factories";
+import {prisma} from "../../packages/gateway/src/lib/prisma";
+import {createUser} from "../lib/factories/auth.factories";
 
 describe("POST /signup", () => {
     beforeEach(async () => {
@@ -49,7 +49,7 @@ describe("POST /signup", () => {
         // Verify the user is stored in the database
         const db = prisma();
         const dbUser = await db.user.findUnique({
-            where: { email: fakeUser.email },
+            where: {email: fakeUser.email},
         });
         expect(dbUser).not.toBeNull();
         expect(dbUser?.name).toBe(fakeUser.name);
@@ -81,7 +81,7 @@ describe("POST /signup", () => {
             });
 
         expect(response.status).toBe(409);
-        expect(response.body).toEqual({ error: "User already exists" });
+        expect(response.body).toEqual({error: "User already exists"});
     });
 
     it("should fail validation if email is invalid", async () => {
@@ -183,7 +183,7 @@ describe("POST /signin", () => {
             });
 
         expect(response.status).toBe(401);
-        expect(response.body).toEqual({ error: "Invalid email or password" });
+        expect(response.body).toEqual({error: "Invalid email or password"});
     });
 
     it("should fail to login if the user does not exist", async () => {
@@ -195,6 +195,6 @@ describe("POST /signin", () => {
             });
 
         expect(response.status).toBe(401);
-        expect(response.body).toEqual({ error: "Invalid email or password" });
+        expect(response.body).toEqual({error: "Invalid email or password"});
     });
 });
