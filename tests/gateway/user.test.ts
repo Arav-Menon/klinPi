@@ -1,6 +1,6 @@
 import {beforeEach, describe, it, expect} from "vitest";
 import {prisma} from "../../packages/gateway/src/lib/prisma";
-import {createRedisClient} from "@klinpi/redis";
+import {createRedisClient} from "../../platform/redis/src/client";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
 
