@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.get("/health", (req, res) => {
-    res.json({ status: "ok", service: "klinpi-gateway" });
+    res.send({status: "ok", service: "klinpi-gateway"});
 });
 
 app.use("/api/v1/auth", authRoutes);
