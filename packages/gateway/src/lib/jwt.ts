@@ -1,29 +1,9 @@
-import jwt from "jsonwebtoken";
 import type {Response, Request} from "express";
+import {signToken, verifyToken, type JwtPayload} from "@klinpi/common";
 
-const JWT_EXPIRES_IN = "15m";
+export {signToken, verifyToken, type JwtPayload};
+
 const COOKIE_NAME = "klinpi_token";
-
-function getJwtSecret(): string {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-        throw new Error("JWT_SECRET environment variable is required");
-    }
-    return secret;
-}
-
-export interface JwtPayload {
-    sub: string;
-}
-
-export function signToken(userId: string): string {
-    const payload: JwtPayload = {sub: userId};
-    return jwt.sign(payload, getJwtSecret(), {expiresIn: JWT_EXPIRES_IN});
-}
-
-export function verifyToken(token: string): JwtPayload {
-    return jwt.verify(token, getJwtSecret()) as JwtPayload;
-}
 
 export function setAuthCookie(res: Response, token: string): void {
     res.cookie(COOKIE_NAME, token, {
