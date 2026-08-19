@@ -13,7 +13,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ws": "^8.21.3"
+    "@klinpi/common": "workspace:*",
+    "dotenv": "^17.4.2",
+    "ws": "^8.21.3",
+    "@klinpi/redis": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1"
