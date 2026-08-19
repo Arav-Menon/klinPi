@@ -14,7 +14,8 @@
     "studio:build": "pnpm --filter @klinpi/studio build",
     "studio:lint": "pnpm --filter @klinpi/studio lint",
     "prisma:generate": "pnpm --filter @klinpi/prisma exec prisma generate",
-    "prisma:migrate": "pnpm --filter @klinpi/prisma exec prisma migrate dev"
+    "prisma:migrate": "pnpm --filter @klinpi/prisma exec prisma migrate dev",
+    "prisma:studio": "pnpm --filter @klinpi/prisma exec prisma studio"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
