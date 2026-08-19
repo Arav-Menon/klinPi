@@ -17,6 +17,10 @@
   "dependencies": {
     "express-rate-limit": "^8.6.2",
     "@klinpi/redis": "workspace:*",
+    "jsonwebtoken": "^9.0.2",
     "rate-limit-redis": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.9"
   }
 }
