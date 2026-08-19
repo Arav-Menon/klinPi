@@ -1,14 +1,12 @@
-import {WebSocketServer} from "ws"
+import dotenv from "dotenv";
+import path from "path";
+import {fileURLToPath} from "url";
+import {realtimeServer} from "./app.js";
 
-const wss = new WebSocketServer({port: 8080});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({path: path.resolve(__dirname, "../../../.env")});
 
-wss.on("connection", socket => {
-    console.log("Connection established");
-    socket.on("message", (data: Buffer) => {
-        const message = data.toString();
-        if (message === "ping") {
-            socket.send("pong");
-        }
-    })
-})
-
+const PORT = Number(process.env.REALTIME_PORT || 8080);
+const server = new realtimeServer(PORT);
+server.start();
