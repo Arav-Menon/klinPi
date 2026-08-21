@@ -1,14 +1,14 @@
-import {WebSocketServer, WebSocket} from "ws"
-import type {IncomingMessage} from "node:http";
-import {verify} from "./verify/verify.js";
-import {AgentSessionManager} from "./modules/AgentSessionManager.js";
+import { WebSocketServer, WebSocket } from "ws"
+import type { IncomingMessage } from "node:http";
+import { verify } from "./verify/verify.js";
+import { AgentSessionManager } from "./modules/AgentSessionManager.js";
 
 export class realtimeServer {
     private wss: WebSocketServer;
     private agentSessionManager: AgentSessionManager;
 
     constructor(port: number) {
-        this.wss = new WebSocketServer({port});
+        this.wss = new WebSocketServer({ port });
         this.agentSessionManager = new AgentSessionManager()
     }
 
@@ -24,6 +24,7 @@ export class realtimeServer {
 
     handleConnection(socket: WebSocket, req: IncomingMessage) {
         try {
+            const url = new URL(req.url!, "ws://localhost");
             const protocol = req.headers["sec-websocket-protocol"];
             let token = typeof protocol === "string" ? protocol.replace("Bearer ", "") : null;
 
@@ -32,32 +33,42 @@ export class realtimeServer {
                 token = url.searchParams.get("token");
             }
             if (!token) {
-                socket.send(JSON.stringify({type: "error", message: "Missing authentication token"}));
+                socket.send(JSON.stringify({ type: "error", message: "Missing authentication token" }));
                 socket.close(1008, "Unauthorized");
                 return;
             }
             const payload = verify(token);
             if (!payload) {
-                socket.send(JSON.stringify({type: "error", message: "Invalid or expired token"}));
+                socket.send(JSON.stringify({ type: "error", message: "Invalid or expired token" }));
                 socket.close(1008, "Unauthorized");
                 return;
             }
-            socket.send(JSON.stringify({type: "connected", userId: payload.sub}));
+
+            const userId = payload.sub;
+            socket.send(JSON.stringify({ type: "connected", userId: userId }));
 
             socket.on("message", (message: string) => {
                 try {
-                    const data = JSON.parse(message.toString())
-
-                    if (data.type == "agent") {
-                        this.agentSessionManager.broadCast()
+                    const data = JSON.parse(message.toString());
+                    const userPrompt = data.userPrompt as string
+                    const sessionId = data.sessionId as string
+                    if (data.type == "CALL_TO_AGENT") {
+                        const agentCallData = {
+                            userId: userId,
+                            sessionId: sessionId,
+                            prompt: userPrompt,
+                            socket: socket
+                        }
+                        this.agentSessionManager.SessionCheck(agentCallData);
                     }
 
-                } catch {
-                    socket.send(JSON.stringify({type: "error", message: "Invalid message format"}));
+                } catch (err) {
+                    console.error(err)
+                    socket.send(JSON.stringify({ type: "error", message: "Invalid message format" }));
                 }
             })
         } catch {
-            socket.send(JSON.stringify({type: "error", message: "Connection failed"}));
+            socket.send(JSON.stringify({ type: "error", message: "Connection failed" }));
             socket.close(1011, "Internal error");
         }
     }
