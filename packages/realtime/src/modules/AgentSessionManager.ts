@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import { db } from "../lib/prisma.js";
 import { cacheData } from "../lib/cache.js";
-import { CACHE_TTL, cacheKeys } from "../lib/cacheKey.js";
+import { CACHE_TTL, cacheKeys } from "../lib/redisKeys.js";
 
 export interface AgentCallData {
     userId: string;
@@ -66,6 +66,8 @@ export class AgentSessionManager {
     }
 
     CallToAgent(data: AgentCallData) {
-        data.socket.send(JSON.stringify("Call to agent"))
+        const sessionId = data.sessionId as string;
+
     }
+
 }
