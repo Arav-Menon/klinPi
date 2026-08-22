@@ -52,6 +52,7 @@ export class realtimeServer {
                     const data = JSON.parse(message.toString());
                     const userPrompt = data.userPrompt as string
                     const sessionId = data.sessionId as string
+
                     if (data.type == "CALL_TO_AGENT") {
                         const agentCallData = {
                             userId: userId,
