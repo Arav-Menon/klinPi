@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package agent;
+
+service AgentService {
+    rpc RunAgent(AgentRequest) returns (stream AgentEvent);
+}
+
+message AgentRequest {
+    string sessionId = 1;
+    string userId = 2;
+    string prompt = 3;
+}
+
+message AgentEvent {
+    string sessionId = 1;
+    EventType type = 2;
+    string content = 3;
+    ToolCall toolCall = 4;
+    ToolResult toolResult = 5;
+    int64 timestamp = 6;
+    int32 sequence = 7;
+}
+
+message ToolCall {
+    string id = 1;
+    string name = 2;
+    string arguments = 3;
+}
+
+message ToolResult {
+    string toolCallId = 1;
+    string output = 2;
+    bool isError = 3;
+}
+
+enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    AGENT_MESSAGE = 1;
+    AGENT_STATUS = 2;
+    TOOL_CALL = 3;
+    TOOL_RESULT = 4;
+    AGENT_ERROR = 5;
+    AGENT_COMPLETED = 6;
+}
