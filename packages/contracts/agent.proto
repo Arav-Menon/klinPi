@@ -10,6 +10,7 @@ message AgentRequest {
     string sessionId = 1;
     string userId = 2;
     string prompt = 3;
+    string repositoryId = 4;
 }
 
 message AgentEvent {
