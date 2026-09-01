@@ -14,6 +14,7 @@ interface ClientRpc {
     sessionId?: string | undefined;
     prompt: string;
     socket: WebSocket;
+    repositoryId?: string;
 }
 
 export class AgentSessionManager {
@@ -46,6 +47,7 @@ export class AgentSessionManager {
                 session = await db.agentSession.findFirst({
                     where: {
                         id: sessionId,
+                        repositoryId: repositoryId as string,
                         userId
                     }
                 });
@@ -82,6 +84,7 @@ export class AgentSessionManager {
             sessionId: data.sessionId,
             userId: data.userId,
             prompt: data.prompt,
+            repositoryId: data.repositoryId
         })
 
         stream.on("data", (event: any) => {
