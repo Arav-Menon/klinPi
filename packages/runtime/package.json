@@ -8,10 +8,14 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -b",
-    "dev": "pnpm run build && node dist/index.js"
+    "dev": "tsx dist/bin.js",
+    "start": "node dist/bin.js"
   },
   "keywords": [],
-  "dependencies": {},
+  "dependencies": {
+    "@openrouter/sdk": "^1.2.139",
+    "@klinpi/compute": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.1.2"
   }
