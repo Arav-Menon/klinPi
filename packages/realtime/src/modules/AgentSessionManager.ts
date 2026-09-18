@@ -92,6 +92,7 @@ export class AgentSessionManager {
             data.socket.send(JSON.stringify({
                 type: "AGENT_EVENT",
                 event: {
+                    userId: data.userId,
                     sessionId: event.sessionId,
                     eventType: event.type,
                     content: event.content,
