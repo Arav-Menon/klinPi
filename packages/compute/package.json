@@ -9,17 +9,17 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "scripts": {
+      "build": "tsc -b",
+      "dev": "tsx ./src/sandbox.ts"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+      "@e2b/code-interpreter": "^2.8.0",
+      "e2b": "^2.39.0"
     }
-  },
-  "scripts": {
-    "build": "tsc -b",
-    "dev": "tsx ./src/index.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@e2b/code-interpreter": "^2.8.0",
-    "e2b": "^2.39.0"
   }
 }
