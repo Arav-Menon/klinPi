@@ -10,6 +10,6 @@ export interface AgentTool {
 
     execute(
         args: Record<string, any>,
-        context: string
-    ): Promise<string>;
+        context: string,
+    ): Promise<any>;
 }
