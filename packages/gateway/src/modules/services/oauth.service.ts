@@ -1,6 +1,8 @@
 import axios from "axios";
 import { OauthProvider, type OauthProviderConfig } from "../../lib/provider.js";
-import { prisma } from "../../lib/prisma.js";
+import { db } from "../../lib/db.js";
+import { users, oauthAccounts } from "@klinpi/db/schema";
+import { eq, and } from "drizzle-orm";
 import { signToken } from "../../lib/jwt.js";
 
 export function getProvider(provider: string): OauthProviderConfig {
@@ -104,32 +106,34 @@ export async function findOrCreateOAuthUser(
     emails: GitHubEmail[],
     accessToken: string,
 ): Promise<{ user: { id: string; email: string; name: string | null; avatarUrl: string | null }; token: string }> {
-    const db = prisma();
+    const database = db();
     const providerAccountId = String(gitHubUser.id);
 
-    const existingAccount = await db.oAuthAccount.findUnique({
-        where: {
-            provider_providerAccountId: {
-                provider,
-                providerAccountId,
-            },
-        },
-        include: { user: true },
-    });
+    const [existingAccount] = await database
+        .select()
+        .from(oauthAccounts)
+        .innerJoin(users, eq(oauthAccounts.userId, users.id))
+        .where(
+            and(
+                eq(oauthAccounts.provider, provider),
+                eq(oauthAccounts.providerAccountId, providerAccountId),
+            )
+        )
+        .limit(1);
 
     if (existingAccount) {
-        await db.oAuthAccount.update({
-            where: { id: existingAccount.id },
-            data: { accessToken },
-        });
+        await database
+            .update(oauthAccounts)
+            .set({ accessToken })
+            .where(eq(oauthAccounts.id, existingAccount.OAuthAccount.id));
 
-        const token = signToken(existingAccount.userId);
+        const token = signToken(existingAccount.OAuthAccount.userId);
         return {
             user: {
-                id: existingAccount.user.id,
-                email: existingAccount.user.email,
-                name: existingAccount.user.name,
-                avatarUrl: existingAccount.user.avatarUrl,
+                id: existingAccount.User.id,
+                email: existingAccount.User.email,
+                name: existingAccount.User.name,
+                avatarUrl: existingAccount.User.avatarUrl,
             },
             token,
         };
@@ -144,44 +148,45 @@ export async function findOrCreateOAuthUser(
         throw new Error("No verified email found from GitHub");
     }
 
-    const existingUser = await db.user.findUnique({
-        where: { email: primaryEmail },
-    });
+    const [existingUser] = await database
+        .select()
+        .from(users)
+        .where(eq(users.email, primaryEmail))
+        .limit(1);
 
     let userId: string;
 
     if (existingUser) {
         userId = existingUser.id;
-        await db.oAuthAccount.create({
-            data: {
-                userId,
-                provider,
-                providerAccountId,
-                accessToken,
-            },
+        await database.insert(oauthAccounts).values({
+            userId,
+            provider,
+            providerAccountId,
+            accessToken,
         });
     } else {
-        const newUser = await db.user.create({
-            data: {
+        const [newUser] = await database
+            .insert(users)
+            .values({
                 email: primaryEmail,
                 name: gitHubUser.name ?? gitHubUser.login,
                 avatarUrl: gitHubUser.avatar_url,
-                oauthAccounts: {
-                    create: {
-                        provider,
-                        providerAccountId,
-                        accessToken,
-                    },
-                },
-            },
+            })
+            .returning();
+        userId = newUser!.id;
+        await database.insert(oauthAccounts).values({
+            userId,
+            provider,
+            providerAccountId,
+            accessToken,
         });
-        userId = newUser.id;
     }
 
-    const user = await db.user.findUnique({
-        where: { id: userId },
-        select: { id: true, email: true, name: true, avatarUrl: true },
-    });
+    const [user] = await database
+        .select({id: users.id, email: users.email, name: users.name, avatarUrl: users.avatarUrl})
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
 
     const token = signToken(userId);
     return {
