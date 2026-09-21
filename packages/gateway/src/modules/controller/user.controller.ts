@@ -3,7 +3,9 @@ import type {AuthenticatedRequest} from "../auth/auth.types.js";
 import * as userService from "../services/user.service.js";
 import * as oauthService from "../services/oauth.service.js";
 import {clearAuthCookie} from "../../lib/jwt.js";
-import {prisma} from "../../lib/prisma.js";
+import { db } from "../../lib/db.js";
+import { oauthAccounts } from "@klinpi/db/schema";
+import { eq, and } from "drizzle-orm";
 
 export async function getProfile(req: AuthenticatedRequest, res: Response) {
     try {
@@ -134,13 +136,17 @@ export async function listRepos(req: AuthenticatedRequest, res: Response) {
             return;
         }
 
-        const db = prisma();
-        const oauthAccount = await db.oAuthAccount.findFirst({
-            where: {
-                userId,
-                provider: "github",
-            },
-        });
+        const database = db();
+        const [oauthAccount] = await database
+            .select()
+            .from(oauthAccounts)
+            .where(
+                and(
+                    eq(oauthAccounts.userId, userId),
+                    eq(oauthAccounts.provider, "github"),
+                )
+            )
+            .limit(1);
 
         if (!oauthAccount || !oauthAccount.accessToken) {
             res.status(404).json({error: "GitHub account not connected"});
