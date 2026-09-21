@@ -1,5 +1,7 @@
 import bcrypt from "bcrypt";
-import { prisma } from "../../lib/prisma.js";
+import { db } from "../../lib/db.js";
+import { users } from "@klinpi/db/schema";
+import { eq } from "drizzle-orm";
 import { cacheData } from "../../lib/cache.js";
 import { cacheKeys } from "../../lib/cacheKey.js";
 
@@ -7,35 +9,40 @@ import { cacheKeys } from "../../lib/cacheKey.js";
 const SALT_ROUNDS = 12;
 
 export async function getUserProfile(userId: string) {
-    const db = prisma();
+    const database = db();
     const cacheKey = cacheKeys.userProfile(userId);
     const checkCache = await cacheData.getCache(cacheKey);
     if (checkCache) {
         return checkCache;
     }
-    const user = await db.user.findUnique({
-        where: { id: userId },
-        select: {
-            id: true,
-            email: true,
-            name: true,
-            avatarUrl: true,
-            createdAt: true,
-            updatedAt: true,
-        },
-    });
+    const [user] = await database
+        .select({
+            id: users.id,
+            email: users.email,
+            name: users.name,
+            avatarUrl: users.avatarUrl,
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
     if (user) {
         await cacheData.setCache(cacheKey, user, 3600);
     }
-    return user;
+    return user ?? null;
 }
 
 export async function updateUserProfile(
     userId: string,
     data: { name?: string; email?: string; password?: string; currentPassword: string },
 ) {
-    const db = prisma();
-    const user = await db.user.findUnique({ where: { id: userId } });
+    const database = db();
+    const [user] = await database
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
     if (!user) {
         return null;
     }
@@ -49,7 +56,11 @@ export async function updateUserProfile(
     }
 
     if (data.email && data.email !== user.email) {
-        const existingUser = await db.user.findUnique({ where: { email: data.email } });
+        const [existingUser] = await database
+            .select()
+            .from(users)
+            .where(eq(users.email, data.email))
+            .limit(1);
         if (existingUser) {
             return "EMAIL_IN_USE";
         }
@@ -71,28 +82,32 @@ export async function updateUserProfile(
         updateData.passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
     }
 
-    const updatedUser = await db.user.update({
-        where: { id: userId },
-        data: updateData,
-        select: {
-            id: true,
-            email: true,
-            name: true,
-            avatarUrl: true,
-            createdAt: true,
-            updatedAt: true,
-        },
-    });
+    const [updatedUser] = await database
+        .update(users)
+        .set(updateData)
+        .where(eq(users.id, userId))
+        .returning({
+            id: users.id,
+            email: users.email,
+            name: users.name,
+            avatarUrl: users.avatarUrl,
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+        });
 
     const cacheKey = cacheKeys.userProfile(userId);
     await cacheData.deleteCache(cacheKey);
 
-    return updatedUser;
+    return updatedUser ?? null;
 }
 
 export async function deleteUserProfile(userId: string, currentPassword: string) {
-    const db = prisma();
-    const user = await db.user.findUnique({ where: { id: userId } });
+    const database = db();
+    const [user] = await database
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
     if (!user) {
         return null;
     }
@@ -105,7 +120,7 @@ export async function deleteUserProfile(userId: string, currentPassword: string)
         return "INVALID_PASSWORD";
     }
 
-    await db.user.delete({ where: { id: userId } });
+    await database.delete(users).where(eq(users.id, userId));
     const cacheKey = cacheKeys.userProfile(userId);
     await cacheData.deleteCache(cacheKey);
     return "DELETED";
