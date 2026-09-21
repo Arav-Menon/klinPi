@@ -13,18 +13,16 @@
     "studio:dev": "pnpm --filter @klinpi/studio dev",
     "studio:build": "pnpm --filter @klinpi/studio build",
     "studio:lint": "pnpm --filter @klinpi/studio lint",
-    "prisma:generate": "pnpm --filter @klinpi/prisma exec prisma generate",
-    "prisma:migrate": "pnpm --filter @klinpi/prisma exec prisma migrate dev",
-    "prisma:studio": "pnpm --filter @klinpi/prisma exec prisma studio"
-
-    
+    "drizzle:generate": "pnpm --filter @klinpi/db exec drizzle-kit generate",
+    "drizzle:migrate": "pnpm --filter @klinpi/db exec drizzle-kit migrate",
+    "drizzle:studio": "pnpm --filter @klinpi/db exec drizzle-kit studio"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.2",
     "@types/supertest": "^7.2.1",
-    "prisma": "^7.9.1",
+    "drizzle-orm": "^0.44.2",
     "supertest": "^7.2.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
@@ -32,7 +30,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
-    "@klinpi/prisma": "workspace:*",
+    "@klinpi/db": "workspace:*",
     "axios": "^1.19.0",
     "bcrypt": "^5.1.1",
     "dotenv": "^17.4.2",
