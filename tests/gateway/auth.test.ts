@@ -1,20 +1,24 @@
 import {describe, it, beforeEach, expect} from "vitest";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
-import {prisma} from "../../packages/gateway/src/lib/prisma";
+import {db} from "../../packages/gateway/src/lib/db";
+import {users} from "@klinpi/db/schema";
+import {eq, inArray} from "drizzle-orm";
 import {createUser} from "../lib/factories/auth.factories";
 
 describe("POST /signup", () => {
     beforeEach(async () => {
-        const db = prisma();
+        const database = db();
         // Clean up ONLY the specific test users to prevent wiping active development data
-        await db.user.deleteMany({
-            where: {
-                email: {
-                    in: ["newuser@test.com", "duplicate@test.com", "short@password.com"],
-                },
-            },
-        });
+        await database
+            .delete(users)
+            .where(
+                inArray(users.email, [
+                    "newuser@test.com",
+                    "duplicate@test.com",
+                    "short@password.com",
+                ])
+            );
     });
 
     it("should register a new user", async () => {
@@ -47,10 +51,12 @@ describe("POST /signup", () => {
         expect(hasAuthToken).toBe(true);
 
         // Verify the user is stored in the database
-        const db = prisma();
-        const dbUser = await db.user.findUnique({
-            where: {email: fakeUser.email},
-        });
+        const database = db();
+        const [dbUser] = await database
+            .select()
+            .from(users)
+            .where(eq(users.email, fakeUser.email))
+            .limit(1);
         expect(dbUser).not.toBeNull();
         expect(dbUser?.name).toBe(fakeUser.name);
     });
@@ -115,14 +121,16 @@ describe("POST /signup", () => {
 
 describe("POST /signin", () => {
     beforeEach(async () => {
-        const db = prisma();
-        await db.user.deleteMany({
-            where: {
-                email: {
-                    in: ["newuser@test.com", "duplicate@test.com", "short@password.com"],
-                },
-            },
-        });
+        const database = db();
+        await database
+            .delete(users)
+            .where(
+                inArray(users.email, [
+                    "newuser@test.com",
+                    "duplicate@test.com",
+                    "short@password.com",
+                ])
+            );
     });
 
     it("should login the existing user", async () => {
@@ -131,29 +139,30 @@ describe("POST /signin", () => {
         const passwordHash = "$2b$12$IIJd6p1/RWRSgCes86FCx.PWnExawsl1Lh7n3ZjlhGItBUjXKwMEC";
 
         // 1. Manually insert the user into the database
-        const db = prisma();
-        const existingUser = await db.user.create({
-            data: {
+        const database = db();
+        const [existingUser] = await database
+            .insert(users)
+            .values({
                 email: "newuser@test.com",
                 name: "New User",
                 passwordHash,
-            },
-        });
+            })
+            .returning();
 
         // 2. Make the signin request
         const response = await request(app)
             .post("/api/v1/auth/signin")
             .send({
-                email: existingUser.email,
+                email: existingUser!.email,
                 password: password,
             });
 
         // 3. Assertions
         expect(response.status).toBe(200);
         expect(response.body).toHaveProperty("user");
-        expect(response.body.user.id).toBe(existingUser.id);
-        expect(response.body.user.email).toBe(existingUser.email);
-        expect(response.body.user.name).toBe(existingUser.name);
+        expect(response.body.user.id).toBe(existingUser!.id);
+        expect(response.body.user.email).toBe(existingUser!.email);
+        expect(response.body.user.name).toBe(existingUser!.name);
 
         // Verify that the auth cookie was set correctly
         const cookies = response.headers["set-cookie"];
@@ -166,19 +175,20 @@ describe("POST /signin", () => {
     it("should fail to login with an incorrect password", async () => {
         const passwordHash = "$2b$12$IIJd6p1/RWRSgCes86FCx.PWnExawsl1Lh7n3ZjlhGItBUjXKwMEC";
 
-        const db = prisma();
-        const existingUser = await db.user.create({
-            data: {
+        const database = db();
+        const [existingUser] = await database
+            .insert(users)
+            .values({
                 email: "newuser@test.com",
                 name: "New User",
                 passwordHash,
-            },
-        });
+            })
+            .returning();
 
         const response = await request(app)
             .post("/api/v1/auth/signin")
             .send({
-                email: existingUser.email,
+                email: existingUser!.email,
                 password: "wrongpassword",
             });
 
