@@ -1,4 +1,5 @@
 import type {Response, Request} from "express";
+import { NODE_ENV } from "@klinpi/common";
 import {signToken, verifyToken, type JwtPayload} from "@klinpi/common";
 
 export {signToken, verifyToken, type JwtPayload};
@@ -8,7 +9,7 @@ const COOKIE_NAME = "klinpi_token";
 export function setAuthCookie(res: Response, token: string): void {
     res.cookie(COOKIE_NAME, token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: NODE_ENV === "production",
         sameSite: "lax",
         maxAge: 15 * 60 * 1000,
         path: "/",
@@ -18,7 +19,7 @@ export function setAuthCookie(res: Response, token: string): void {
 export function clearAuthCookie(res: Response): void {
     res.clearCookie(COOKIE_NAME, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: NODE_ENV === "production",
         sameSite: "lax",
         path: "/",
     });
