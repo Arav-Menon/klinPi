@@ -1,16 +1,18 @@
-import { prisma } from "../../lib/prisma.js";
+import { db } from "../../lib/db.js";
+import { agentSessions } from "@klinpi/db/schema";
+import { eq, and, ne, desc, gt } from "drizzle-orm";
 import { cacheData } from "../../lib/cache.js";
 import { cacheKeys, CACHE_TTL } from "../../lib/cacheKey.js";
-import type { SessionStatus } from "@klinpi/prisma";
+import type { SessionStatus } from "@klinpi/db";
 
-const SESSION_SELECT = {
-  id: true,
-  userId: true,
-  repositoryId: true,
-  title: true,
-  status: true,
-  createdAt: true,
-  updatedAt: true,
+const SESSION_COLUMNS = {
+  id: agentSessions.id,
+  userId: agentSessions.userId,
+  repositoryId: agentSessions.repositoryId,
+  title: agentSessions.title,
+  status: agentSessions.status,
+  createdAt: agentSessions.createdAt,
+  updatedAt: agentSessions.updatedAt,
 } as const;
 
 type SessionResponse = {
@@ -27,18 +29,18 @@ export async function createSession(
   userId: string,
   data: { title?: string; repositoryId?: string },
 ): Promise<SessionResponse> {
-  const db = prisma();
-  const session = await db.agentSession.create({
-    data: {
+  const database = db();
+  const [session] = await database
+    .insert(agentSessions)
+    .values({
       userId,
       title: data.title ?? null,
       repositoryId: data.repositoryId ?? null,
-    },
-    select: SESSION_SELECT,
-  });
+    })
+    .returning(SESSION_COLUMNS);
 
   await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
-  await cacheData.setCache(cacheKeys.session(session.id), session, CACHE_TTL.SESSION);
+  await cacheData.setCache(cacheKeys.session(session!.id), session, CACHE_TTL.SESSION);
 
   return session as SessionResponse;
 }
@@ -47,7 +49,7 @@ export async function getSession(
   userId: string,
   sessionId: string,
 ): Promise<SessionResponse | null> {
-  const db = prisma();
+  const database = db();
   const cacheKey = cacheKeys.session(sessionId);
 
   const cached = await cacheData.getCache(cacheKey);
@@ -59,10 +61,11 @@ export async function getSession(
     return session;
   }
 
-  const session = await db.agentSession.findUnique({
-    where: { id: sessionId },
-    select: SESSION_SELECT,
-  });
+  const [session] = await database
+    .select(SESSION_COLUMNS)
+    .from(agentSessions)
+    .where(eq(agentSessions.id, sessionId))
+    .limit(1);
 
   if (!session || session.userId !== userId) {
     return null;
@@ -77,39 +80,41 @@ export async function updateSession(
   sessionId: string,
   data: { title?: string; status?: SessionStatus },
 ): Promise<SessionResponse | null> {
-  const db = prisma();
+  const database = db();
 
-  const existing = await db.agentSession.findUnique({
-    where: { id: sessionId },
-    select: { userId: true },
-  });
+  const [existing] = await database
+    .select({ userId: agentSessions.userId })
+    .from(agentSessions)
+    .where(eq(agentSessions.id, sessionId))
+    .limit(1);
 
   if (!existing || existing.userId !== userId) {
     return null;
   }
 
-  const session = await db.agentSession.update({
-    where: { id: sessionId },
-    data,
-    select: SESSION_SELECT,
-  });
+  const [session] = await database
+    .update(agentSessions)
+    .set(data)
+    .where(eq(agentSessions.id, sessionId))
+    .returning(SESSION_COLUMNS);
 
   await cacheData.deleteCache(cacheKeys.session(sessionId));
   await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
 
-  return session as SessionResponse;
+  return (session as SessionResponse) ?? null;
 }
 
 export async function archiveSession(
   userId: string,
   sessionId: string,
 ): Promise<SessionResponse | "ALREADY_ARCHIVED" | null> {
-  const db = prisma();
+  const database = db();
 
-  const existing = await db.agentSession.findUnique({
-    where: { id: sessionId },
-    select: { userId: true, status: true },
-  });
+  const [existing] = await database
+    .select({ userId: agentSessions.userId, status: agentSessions.status })
+    .from(agentSessions)
+    .where(eq(agentSessions.id, sessionId))
+    .limit(1);
 
   if (!existing || existing.userId !== userId) {
     return null;
@@ -119,16 +124,16 @@ export async function archiveSession(
     return "ALREADY_ARCHIVED";
   }
 
-  const session = await db.agentSession.update({
-    where: { id: sessionId },
-    data: { status: "ARCHIVED" },
-    select: SESSION_SELECT,
-  });
+  const [session] = await database
+    .update(agentSessions)
+    .set({ status: "ARCHIVED" })
+    .where(eq(agentSessions.id, sessionId))
+    .returning(SESSION_COLUMNS);
 
   await cacheData.deleteCache(cacheKeys.session(sessionId));
   await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
 
-  return session as SessionResponse;
+  return (session as SessionResponse) ?? null;
 }
 
 export async function getRecentSessions(
@@ -136,7 +141,7 @@ export async function getRecentSessions(
   limit: number,
   cursor?: string,
 ): Promise<{ sessions: SessionResponse[]; nextCursor: string | undefined }> {
-  const db = prisma();
+  const database = db();
   const cacheKey = cacheKeys.userSessionsRecent(userId);
 
   if (!cursor) {
@@ -146,21 +151,21 @@ export async function getRecentSessions(
     }
   }
 
-  const sessions = await db.agentSession.findMany({
-    where: {
-      userId,
-      status: { not: "ARCHIVED" },
-    },
-    select: SESSION_SELECT,
-    orderBy: { updatedAt: "desc" },
-    take: limit + 1,
-    ...(cursor
-      ? {
-        cursor: { id: cursor },
-        skip: 1,
-      }
-      : {}),
-  });
+  const conditions = [
+    eq(agentSessions.userId, userId),
+    ne(agentSessions.status, "ARCHIVED"),
+  ];
+
+  if (cursor) {
+    conditions.push(gt(agentSessions.id, cursor));
+  }
+
+  const sessions = await database
+    .select(SESSION_COLUMNS)
+    .from(agentSessions)
+    .where(and(...conditions))
+    .orderBy(agentSessions.updatedAt)
+    .limit(limit + 1);
 
   const hasMore = sessions.length > limit;
   const result = {
@@ -177,18 +182,22 @@ export async function searchSessions(
   query: string,
   limit: number,
 ): Promise<SessionResponse[]> {
-  const db = prisma();
+  const database = db();
 
-  const sessions = await db.agentSession.findMany({
-    where: {
-      userId,
-      status: { not: "ARCHIVED" },
-      title: { contains: query, mode: "insensitive" },
-    },
-    select: SESSION_SELECT,
-    orderBy: { updatedAt: "desc" },
-    take: limit,
-  });
+  const sessions = await database
+    .select(SESSION_COLUMNS)
+    .from(agentSessions)
+    .where(
+      and(
+        eq(agentSessions.userId, userId),
+        ne(agentSessions.status, "ARCHIVED"),
+      )
+    )
+    .orderBy(agentSessions.updatedAt)
+    .limit(limit);
 
-  return sessions.map((s) => s as SessionResponse);
+  const lowerQuery = query.toLowerCase();
+  return sessions
+    .filter((s) => s.title && s.title.toLowerCase().includes(lowerQuery))
+    .map((s) => s as SessionResponse);
 }
