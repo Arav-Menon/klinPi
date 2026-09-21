@@ -1,5 +1,7 @@
 import {beforeEach, describe, it, expect} from "vitest";
-import {prisma} from "../../packages/gateway/src/lib/prisma";
+import {db} from "../../packages/gateway/src/lib/db";
+import {users} from "@klinpi/db/schema";
+import {eq, inArray} from "drizzle-orm";
 import {createRedisClient} from "../../platform/redis/src/client";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
@@ -16,14 +18,15 @@ async function flushRateLimitKeys() {
 }
 
 async function createUserAndGetCookie(data: { email: string; name?: string }) {
-    const db = prisma();
-    const user = await db.user.create({
-        data: {
+    const database = db();
+    const [user] = await database
+        .insert(users)
+        .values({
             email: data.email,
             name: data.name ?? "Test User",
             passwordHash: PASSWORD_HASH,
-        },
-    });
+        })
+        .returning();
 
     const authResponse = await request(app).post("/api/v1/auth/signin").send({
         email: data.email,
@@ -56,8 +59,8 @@ const TEST_EMAILS = [
 
 describe("GET /profile", () => {
     beforeEach(async () => {
-        const db = prisma();
-        await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        const database = db();
+        await database.delete(users).where(inArray(users.email, TEST_EMAILS));
         await flushRateLimitKeys();
     });
 
@@ -72,7 +75,7 @@ describe("GET /profile", () => {
             .set("Cookie", cookie);
 
         expect(response.status).toBe(200);
-        expect(response.body.user.id).toBe(user.id);
+        expect(response.body.user.id).toBe(user!.id);
         expect(response.body.user.email).toBe("profile-get@test.com");
         expect(response.body.user.name).toBe("Profile User");
         expect(response.body.user).not.toHaveProperty("passwordHash");
@@ -93,8 +96,8 @@ describe("GET /profile", () => {
 
 describe("PUT /profile", () => {
     beforeEach(async () => {
-        const db = prisma();
-        await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        const database = db();
+        await database.delete(users).where(inArray(users.email, TEST_EMAILS));
         await flushRateLimitKeys();
     });
 
@@ -117,8 +120,12 @@ describe("PUT /profile", () => {
         expect(response.body.user.name).toBe("Updated Name");
         expect(response.body.user.email).toBe("profile-put-new@test.com");
 
-        const db = prisma();
-        const user = await db.user.findUnique({where: {id: response.body.user.id}});
+        const database = db();
+        const [user] = await database
+            .select()
+            .from(users)
+            .where(eq(users.id, response.body.user.id))
+            .limit(1);
         expect(user?.name).toBe("Updated Name");
         expect(user?.email).toBe("profile-put-new@test.com");
     });
@@ -211,8 +218,8 @@ describe("PUT /profile", () => {
 
 describe("PATCH /profile", () => {
     beforeEach(async () => {
-        const db = prisma();
-        await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        const database = db();
+        await database.delete(users).where(inArray(users.email, TEST_EMAILS));
         await flushRateLimitKeys();
     });
 
@@ -338,8 +345,8 @@ describe("PATCH /profile", () => {
 
 describe("DELETE /profile", () => {
     beforeEach(async () => {
-        const db = prisma();
-        await db.user.deleteMany({where: {email: {in: TEST_EMAILS}}});
+        const database = db();
+        await database.delete(users).where(inArray(users.email, TEST_EMAILS));
         await flushRateLimitKeys();
     });
 
@@ -356,9 +363,13 @@ describe("DELETE /profile", () => {
         expect(response.status).toBe(200);
         expect(response.body.message).toBe("Account deleted successfully");
 
-        const db = prisma();
-        const deleted = await db.user.findUnique({where: {id: user.id}});
-        expect(deleted).toBeNull();
+        const database = db();
+        const [deleted] = await database
+            .select()
+            .from(users)
+            .where(eq(users.id, user!.id))
+            .limit(1);
+        expect(deleted).toBeUndefined();
     });
 
     it("should return 401 with wrong current password", async () => {
@@ -374,10 +385,12 @@ describe("DELETE /profile", () => {
         expect(response.status).toBe(401);
         expect(response.body.error).toBe("Invalid current password");
 
-        const db = prisma();
-        const stillExists = await db.user.findUnique({
-            where: {email: "profile-delete-invalid@test.com"},
-        });
+        const database = db();
+        const [stillExists] = await database
+            .select()
+            .from(users)
+            .where(eq(users.email, "profile-delete-invalid@test.com"))
+            .limit(1);
         expect(stillExists).not.toBeNull();
     });
 
