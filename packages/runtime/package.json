@@ -13,8 +13,12 @@
   },
   "keywords": [],
   "dependencies": {
+    "@klinpi/common": "workspace:*",
+    "@klinpi/db": "workspace:*",
+    "@klinpi/redis": "workspace:*",
     "@openrouter/sdk": "^1.2.139",
-    "@klinpi/compute": "workspace:*"
+    "@klinpi/compute": "workspace:*",
+    "axios": "^1.19.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2"
