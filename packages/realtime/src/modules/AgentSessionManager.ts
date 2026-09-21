@@ -1,5 +1,7 @@
 import type { WebSocket } from "ws";
-import { db } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
+import { agentSessions } from "@klinpi/db/schema";
+import { eq, and } from "drizzle-orm";
 import { cacheData } from "../lib/cache.js";
 import { CACHE_TTL, cacheKeys } from "../lib/redisKeys.js";
 import { clientRPC } from "../services/client-RPC/rpc-client.js";
@@ -24,19 +26,21 @@ export class AgentSessionManager {
         let session;
 
         if (sessionId == undefined) {
-
-            session = await db.agentSession.create({
-                data: {
+            const database = db();
+            const [newSession] = await database
+                .insert(agentSessions)
+                .values({
                     userId,
                     title: prompt.length > 30
                         ? prompt.slice(0, 30) + "..."
                         : prompt,
-                    repositoryId: repositoryId ?? null
-                }
-            });
+                    repositoryId: repositoryId ?? null,
+                })
+                .returning();
+            session = newSession;
 
             await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
-            await cacheData.setCache(cacheKeys.session(session.id), session, CACHE_TTL.SESSION);
+            await cacheData.setCache(cacheKeys.session(session!.id), session, CACHE_TTL.SESSION);
         } else {
             const cacheKey = cacheKeys.session(sessionId);
             const checkSessionCache = await cacheData.getCache(cacheKey);
@@ -44,13 +48,19 @@ export class AgentSessionManager {
             if (checkSessionCache && checkSessionCache.userId === userId) {
                 session = checkSessionCache;
             } else {
-                session = await db.agentSession.findFirst({
-                    where: {
-                        id: sessionId,
-                        repositoryId: repositoryId as string,
-                        userId
-                    }
-                });
+                const database = db();
+                const [foundSession] = await database
+                    .select()
+                    .from(agentSessions)
+                    .where(
+                        and(
+                            eq(agentSessions.id, sessionId),
+                            eq(agentSessions.repositoryId, repositoryId as string),
+                            eq(agentSessions.userId, userId),
+                        )
+                    )
+                    .limit(1);
+                session = foundSession;
 
                 if (session) {
                     await cacheData.setCache(cacheKey, session, CACHE_TTL.SESSION);
