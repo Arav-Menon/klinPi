@@ -96,7 +96,9 @@ klinpi/
 │   ├── compute/        # Compute layer
 │   └── realtime/       # WebSocket server
 ├── platform/
-│   └── prisma/         # Database schema, migrations, generated client
+│   ├── drizzle/        # Drizzle ORM schema, client, migrations
+│   ├── redis/          # Redis client and cache utilities
+│   └── common/         # Shared utilities (JWT, rate limiting)
 ├── tests/
 │   ├── gateway/        # Gateway integration tests
 │   └── studio/         # Studio tests
