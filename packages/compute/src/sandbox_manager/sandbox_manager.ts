@@ -41,6 +41,19 @@ class SandboxManger {
         return sandbox
 
     }
+
+    async destroySbx(): Promise<void> {
+        if (this.sbx) {
+            console.log(`[Sandbox] Destroying: ${this.sbx.sandboxId}`);
+            await this.sbx.kill();
+            this.sbx = null;
+        }
+        if (this.connectedSbx) {
+            console.log(`[Sandbox] Disconnecting: ${this.connectedSbx.sandboxId}`);
+            await this.connectedSbx.kill();
+            this.connectedSbx = null;
+        }
+    }
 }
 
 export const sandboxManger = new SandboxManger();
