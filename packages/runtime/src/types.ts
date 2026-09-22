@@ -51,8 +51,11 @@ export type AgentEventCallback = (event: AgentEventPayload) => void;
 
 export interface ModelToolCall {
     id: string;
-    name: string;
-    arguments: string;
+    type: "function";
+    function: {
+        name: string;
+        arguments: string;
+    };
 }
 
 export type LoopMessage =
