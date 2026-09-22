@@ -9,7 +9,7 @@ function getRedisConfig(): RedisOptions | string {
     return {
         host: process.env.REDIS_HOST ?? "localhost",
         port: Number(process.env.REDIS_PORT ?? 6379),
-        username: process.env.REDIS_USERNAME,
+        ...(process.env.REDIS_USERNAME ? {username: process.env.REDIS_USERNAME} : {}),
         password: process.env.REDIS_PASSWORD,
         lazyConnect: true,
         retryStrategy(times) {
