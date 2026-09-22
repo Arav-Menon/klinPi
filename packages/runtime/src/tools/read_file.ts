@@ -8,20 +8,19 @@ export const read_file: AgentTool = {
     parameters: {
         type: "object",
         properties: {
-            sandboxId: {
-                type: "string",
-                description: "The E2B sandbox ID",
-            },
             path: {
                 type: "string",
                 description: "Absolute path to the file to read",
             },
         },
-        required: ["sandboxId", "path"],
+        required: ["path"],
     },
 
-    async execute(args, _context) {
-        const { sandboxId, path } = args as { sandboxId: string; path: string };
+    async execute(args, sandboxId) {
+        const { path } = args as { path: string };
+        if (!sandboxId) {
+            return "Error: No sandbox available. The agent has not initialized a sandbox yet.";
+        }
         try {
             return await readFile(sandboxId, path);
         } catch (error) {
