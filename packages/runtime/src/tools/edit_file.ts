@@ -8,10 +8,6 @@ export const edit_file: AgentTool = {
     parameters: {
         type: "object",
         properties: {
-            sandboxId: {
-                type: "string",
-                description: "The E2B sandbox ID",
-            },
             path: {
                 type: "string",
                 description: "Absolute path to the file to write",
@@ -21,11 +17,14 @@ export const edit_file: AgentTool = {
                 description: "The content to write to the file",
             },
         },
-        required: ["sandboxId", "path", "content"],
+        required: ["path", "content"],
     },
 
-    async execute(args, _context) {
-        const { sandboxId, path, content } = args as { sandboxId: string; path: string; content: string };
+    async execute(args, sandboxId) {
+        const { path, content } = args as { path: string; content: string };
+        if (!sandboxId) {
+            return "Error: No sandbox available. The agent has not initialized a sandbox yet.";
+        }
         try {
             await writeFile(sandboxId, path, content);
             return `Successfully wrote file '${path}'`;
