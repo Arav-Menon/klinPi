@@ -9,7 +9,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc -b",
     "dev": "tsx dist/bin.js",
-    "start": "node dist/bin.js"
+    "start": "node dist/bin.js",
+    "seed": "tsx scripts/seed.ts"
   },
   "keywords": [],
   "dependencies": {
