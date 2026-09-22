@@ -2,6 +2,24 @@ import type { MemoryType, MemoryImportance } from "@klinpi/db";
 
 export type { MemoryType, MemoryImportance };
 
+export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
+
+export interface MessageRecord {
+  id: string;
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+export interface CreateMessageInput {
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface MemoryRecord {
   id: string;
   userId: string;
