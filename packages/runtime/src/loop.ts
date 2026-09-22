@@ -13,6 +13,8 @@ export interface LoopInput {
     tools: AgentTool[];
     onEvent: AgentEventCallback;
     modelFn: ModelFn;
+    createSandbox?: () => Promise<string>;
+    destroySandbox?: (sandboxId: string) => Promise<void>;
 }
 
 function convertToolsToOpenRouter(
@@ -40,113 +42,126 @@ export async function runLoop(input: LoopInput): Promise<void> {
 
     const openRouterTools = convertToolsToOpenRouter(tools);
     const conversation: LoopMessage[] = [...messages];
+    let sandboxId: string | undefined;
 
-    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-        const response = await modelFn(conversation, openRouterTools);
+    try {
+        for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+            const response = await modelFn(conversation, openRouterTools);
 
-        const hasToolCalls =
-            response.toolCalls !== null &&
-            response.toolCalls !== undefined &&
-            response.toolCalls.length > 0;
+            const hasToolCalls =
+                response.toolCalls !== null &&
+                response.toolCalls !== undefined &&
+                response.toolCalls.length > 0;
 
-        if (!hasToolCalls) {
-            if (response.content) {
-                onEvent({
-                    type: "AGENT_MESSAGE",
-                    content: response.content,
-                });
+            if (!hasToolCalls) {
+                if (response.content) {
+                    onEvent({
+                        type: "AGENT_MESSAGE",
+                        content: response.content,
+                    });
+                }
+                return;
             }
-            return;
-        }
-
-        conversation.push({
-            role: "assistant",
-            content: response.content,
-            toolCalls: response.toolCalls!,
-        });
-
-        for (const toolCall of response.toolCalls!) {
-            onEvent({
-                type: "TOOL_CALL",
-                toolCall: {
-                    id: toolCall.id,
-                    name: toolCall.name,
-                    arguments: toolCall.arguments,
-                },
-            });
-
-            const tool = tools.find((t) => t.name === toolCall.name);
-
-            if (!tool) {
-                const errorMessage = `Unknown tool: ${toolCall.name}`;
-                onEvent({
-                    type: "TOOL_RESULT",
-                    toolResult: {
-                        toolCallId: toolCall.id,
-                        output: errorMessage,
-                        isError: true,
-                    },
-                });
-                conversation.push({
-                    role: "tool",
-                    toolCallId: toolCall.id,
-                    content: errorMessage,
-                });
-                continue;
-            }
-
-            let args: Record<string, any>;
-            try {
-                args = JSON.parse(toolCall.arguments);
-            } catch {
-                const errorMessage = `Invalid JSON arguments for tool ${toolCall.name}: ${toolCall.arguments}`;
-                onEvent({
-                    type: "TOOL_RESULT",
-                    toolResult: {
-                        toolCallId: toolCall.id,
-                        output: errorMessage,
-                        isError: true,
-                    },
-                });
-                conversation.push({
-                    role: "tool",
-                    toolCallId: toolCall.id,
-                    content: errorMessage,
-                });
-                continue;
-            }
-
-            let result: any;
-            try {
-                result = await tool.execute(args, "");
-            } catch (error) {
-                const message =
-                    error instanceof Error ? error.message : String(error);
-                result = `Tool execution failed: ${message}`;
-            }
-
-            const resultString =
-                typeof result === "string" ? result : JSON.stringify(result);
-
-            onEvent({
-                type: "TOOL_RESULT",
-                toolResult: {
-                    toolCallId: toolCall.id,
-                    output: resultString,
-                    isError: false,
-                },
-            });
 
             conversation.push({
-                role: "tool",
-                toolCallId: toolCall.id,
-                content: resultString,
+                role: "assistant",
+                content: response.content,
+                toolCalls: response.toolCalls!,
             });
+
+            for (const toolCall of response.toolCalls!) {
+                onEvent({
+                    type: "TOOL_CALL",
+                    toolCall: {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments,
+                    },
+                });
+
+                const tool = tools.find((t) => t.name === toolCall.function.name);
+
+                if (!tool) {
+                    const errorMessage = `Unknown tool: ${toolCall.function.name}`;
+                    onEvent({
+                        type: "TOOL_RESULT",
+                        toolResult: {
+                            toolCallId: toolCall.id,
+                            output: errorMessage,
+                            isError: true,
+                        },
+                    });
+                    conversation.push({
+                        role: "tool",
+                        toolCallId: toolCall.id,
+                        content: errorMessage,
+                    });
+                    continue;
+                }
+
+                if (!sandboxId && input.createSandbox) {
+                    onEvent({ type: "AGENT_STATUS", content: "Creating sandbox..." });
+                    sandboxId = await input.createSandbox();
+                    onEvent({ type: "AGENT_STATUS", content: `Sandbox ready: ${sandboxId}` });
+                }
+
+                let args: Record<string, any>;
+                try {
+                    args = JSON.parse(toolCall.function.arguments);
+                } catch {
+                    const errorMessage = `Invalid JSON arguments for tool ${toolCall.function.name}: ${toolCall.function.arguments}`;
+                    onEvent({
+                        type: "TOOL_RESULT",
+                        toolResult: {
+                            toolCallId: toolCall.id,
+                            output: errorMessage,
+                            isError: true,
+                        },
+                    });
+                    conversation.push({
+                        role: "tool",
+                        toolCallId: toolCall.id,
+                        content: errorMessage,
+                    });
+                    continue;
+                }
+
+                let result: any;
+                try {
+                    result = await tool.execute(args, sandboxId ?? "");
+                } catch (error) {
+                    const message =
+                        error instanceof Error ? error.message : String(error);
+                    result = `Tool execution failed: ${message}`;
+                }
+
+                const resultString =
+                    typeof result === "string" ? result : JSON.stringify(result);
+
+                onEvent({
+                    type: "TOOL_RESULT",
+                    toolResult: {
+                        toolCallId: toolCall.id,
+                        output: resultString,
+                        isError: false,
+                    },
+                });
+
+                conversation.push({
+                    role: "tool",
+                    toolCallId: toolCall.id,
+                    content: resultString,
+                });
+            }
+        }
+
+        onEvent({
+            type: "AGENT_ERROR",
+            content: `Max iterations (${MAX_ITERATIONS}) reached`,
+        });
+    } finally {
+        if (sandboxId && input.destroySandbox) {
+            await input.destroySandbox(sandboxId);
         }
     }
-
-    onEvent({
-        type: "AGENT_ERROR",
-        content: `Max iterations (${MAX_ITERATIONS}) reached`,
-    });
 }
