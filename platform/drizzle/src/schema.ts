@@ -296,7 +296,7 @@ export const memories = pgTable(
     content: text("content").notNull(),
     normalizedContent: text("normalizedContent").notNull(),
     importance: memoryImportanceEnum("importance").default("MEDIUM").notNull(),
-    embedding: vector("embedding", { dimensions: 1024 }),
+    embedding: vector("embedding", { dimensions: 4096 }),
     metadata: jsonb("metadata"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
