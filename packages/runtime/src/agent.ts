@@ -11,6 +11,9 @@ import { getTools } from "./tools/index.js";
 import { runLoop } from "./loop.js";
 import { callModelWithTools } from "./model.js";
 import { SYSTEM_PROMPT } from "./lib/system-prompt.js";
+import { createSandbox } from "@klinpi/compute";
+import { getDb, schema } from "@klinpi/db";
+import { eq } from "drizzle-orm";
 
 export interface AgentConfig {
     contextBuilder: ContextBuilder;
@@ -109,6 +112,21 @@ export class Agent {
 
             const tools = getTools();
 
+            let repositoryCloneUrl: string | undefined;
+            let repositoryDefaultBranch: string | undefined;
+            if (repositoryId) {
+                const db = getDb();
+                const [repo] = await db
+                    .select()
+                    .from(schema.repositories)
+                    .where(eq(schema.repositories.id, repositoryId))
+                    .limit(1);
+                if (repo) {
+                    repositoryCloneUrl = repo.cloneUrl;
+                    repositoryDefaultBranch = repo.defaultBranch;
+                }
+            }
+
             const wrappedOnEvent = (event: AgentEventPayload) => {
                 if (event.type === "AGENT_MESSAGE" && event.content) {
                     this.messageService
@@ -127,12 +145,39 @@ export class Agent {
                 emit(event);
             };
 
-            await runLoop({
+            const loopInput: import("./loop.js").LoopInput = {
                 messages: context.messages,
                 tools,
                 onEvent: wrappedOnEvent,
                 modelFn: this.modelFn,
-            });
+            };
+
+            if (repositoryCloneUrl) {
+                const cloneUrl = repositoryCloneUrl;
+                const branch = repositoryDefaultBranch ?? "main";
+                loopInput.createSandbox = async () => {
+                    const { sandbox } = await createSandbox();
+                    emit({ type: "AGENT_STATUS", content: `Cloning ${cloneUrl} (branch: ${branch})...` });
+                    const result = await sandbox.commands.run(
+                        `git clone --branch ${branch} ${cloneUrl} /workspace`,
+                    );
+                    if (result.exitCode !== 0) {
+                        throw new Error(`Clone failed: ${result.stderr}`);
+                    }
+                    emit({ type: "AGENT_STATUS", content: "Repository cloned successfully" });
+                    return sandbox.sandboxId;
+                };
+                loopInput.destroySandbox = async () => {
+                    try {
+                        const { sandboxManger } = await import("@klinpi/compute");
+                        await sandboxManger.destroySbx();
+                    } catch {
+                        // Sandbox cleanup is best-effort
+                    }
+                };
+            }
+
+            await runLoop(loopInput);
 
             emit({ type: "AGENT_COMPLETED" });
         } catch (error) {
