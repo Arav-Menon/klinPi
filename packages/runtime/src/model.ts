@@ -53,8 +53,11 @@ const callModelWithTools: ModelFn = async (messages, tools): Promise<ModelRespon
     const toolCalls = rawToolCalls && rawToolCalls.length > 0
         ? rawToolCalls.map((tc) => ({
               id: tc.id,
-              name: tc.function.name,
-              arguments: tc.function.arguments,
+              type: "function" as const,
+              function: {
+                  name: tc.function.name,
+                  arguments: tc.function.arguments,
+              },
           }))
         : null;
 
