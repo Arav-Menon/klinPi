@@ -3,6 +3,7 @@ import { sandboxManger } from "@klinpi/compute";
 
 export const clone_repo: AgentTool = {
     name: "clone_repo",
+    requiresSandbox: true,
     description: "Clone a Git repository into the sandbox filesystem",
 
     parameters: {
@@ -38,7 +39,7 @@ export const clone_repo: AgentTool = {
         try {
             const sandbox = await sandboxManger.connectSbx(sandboxId);
             const result = await sandbox.commands.run(
-                `git clone --branch ${branch} ${url} ${path}`,
+                `sudo mkdir -p ${path} && sudo chown -R user ${path} && git clone --branch ${branch} ${url} ${path}`,
             );
 
             if (result.exitCode !== 0) {
@@ -47,8 +48,11 @@ export const clone_repo: AgentTool = {
 
             return `Repository cloned successfully to '${path}' (branch: ${branch}). Output: ${result.stdout}`;
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            return `Error cloning repository '${url}': ${message}`;
+            const stderr = (error as { stderr?: string }).stderr;
+            const detail =
+                (typeof stderr === "string" && stderr.trim()) ||
+                (error instanceof Error ? error.message : String(error));
+            return `Error cloning repository '${url}': ${detail}`;
         }
     },
 };
