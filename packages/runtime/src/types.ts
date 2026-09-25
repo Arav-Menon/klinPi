@@ -1,6 +1,7 @@
 export interface AgentTool {
     name: string;
     description: string;
+    requiresSandbox?: boolean;
 
     parameters: {
         type: "object";
@@ -12,6 +13,15 @@ export interface AgentTool {
         args: Record<string, any>,
         context: string,
     ): Promise<any>;
+}
+
+import type { MemoryService } from "./state/memory.js";
+
+export interface ToolContext {
+    memoryService: MemoryService;
+    userId: string;
+    sessionId: string;
+    repositoryId: string | null;
 }
 
 export interface AgentRunInput {
