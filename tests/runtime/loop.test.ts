@@ -6,6 +6,7 @@ import type {
     LoopMessage,
     ModelFn,
     ModelResponse,
+    ModelToolCall,
 } from "../../packages/runtime/src/types.js";
 
 function createMockTool(overrides?: Partial<AgentTool>): AgentTool {
@@ -21,6 +22,14 @@ function createMockTool(overrides?: Partial<AgentTool>): AgentTool {
         },
         execute: vi.fn().mockResolvedValue("tool result"),
         ...overrides,
+    };
+}
+
+function createMockToolCall(id: string, name: string, args: string): ModelToolCall {
+    return {
+        id,
+        type: "function",
+        function: { name, arguments: args },
     };
 }
 
@@ -69,7 +78,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "test_tool", arguments: '{"input":"test"}' }],
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"test"}')],
                 finishReason: "tool_calls",
             },
             { content: "Done!", toolCalls: null, finishReason: "stop" },
@@ -101,7 +110,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "nonexistent_tool", arguments: '{}' }],
+                toolCalls: [createMockToolCall("call_1", "nonexistent_tool", "{}")],
                 finishReason: "tool_calls",
             },
             { content: "Fixed it.", toolCalls: null, finishReason: "stop" },
@@ -125,7 +134,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "test_tool", arguments: 'not-json' }],
+                toolCalls: [createMockToolCall("call_1", "test_tool", "not-json")],
                 finishReason: "tool_calls",
             },
             { content: "OK", toolCalls: null, finishReason: "stop" },
@@ -153,7 +162,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "test_tool", arguments: '{"input":"x"}' }],
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
                 finishReason: "tool_calls",
             },
             { content: "Let me try again.", toolCalls: null, finishReason: "stop" },
@@ -177,12 +186,12 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "tool_a", arguments: '{"input":"a"}' }],
+                toolCalls: [createMockToolCall("call_1", "tool_a", '{"input":"a"}')],
                 finishReason: "tool_calls",
             },
             {
                 content: null,
-                toolCalls: [{ id: "call_2", name: "tool_b", arguments: '{"input":"b"}' }],
+                toolCalls: [createMockToolCall("call_2", "tool_b", '{"input":"b"}')],
                 finishReason: "tool_calls",
             },
             { content: "All done.", toolCalls: null, finishReason: "stop" },
@@ -208,7 +217,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn(
             Array.from({ length: 11 }, () => ({
                 content: null,
-                toolCalls: [{ id: "call_x", name: "test_tool", arguments: '{"input":"loop"}' }],
+                toolCalls: [createMockToolCall("call_x", "test_tool", '{"input":"loop"}')],
                 finishReason: "tool_calls" as const,
             })),
         );
@@ -279,7 +288,7 @@ describe("runLoop", () => {
         const modelFn = createMockModelFn([
             {
                 content: null,
-                toolCalls: [{ id: "call_1", name: "test_tool", arguments: '{"input":"x"}' }],
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
                 finishReason: "tool_calls",
             },
             { content: "Done", toolCalls: null, finishReason: "stop" },
@@ -299,12 +308,95 @@ describe("runLoop", () => {
         expect(messagesPassed[2]).toEqual({
             role: "assistant",
             content: null,
-            toolCalls: [{ id: "call_1", name: "test_tool", arguments: '{"input":"x"}' }],
+            toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
         });
         expect(messagesPassed[3]).toEqual({
             role: "tool",
             toolCallId: "call_1",
             content: "tool result",
         });
+    });
+
+    it("should reuse initialSandboxId without creating a new sandbox", async () => {
+        const tool = createMockTool();
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
+                finishReason: "tool_calls",
+            },
+            { content: "Done", toolCalls: null, finishReason: "stop" },
+        ]);
+        const createSandbox = vi.fn();
+
+        await runLoop({
+            messages: BASE_MESSAGES,
+            tools: [tool],
+            onEvent: (e) => events.push(e),
+            modelFn,
+            initialSandboxId: "sbx-existing",
+            createSandbox,
+        });
+
+        expect(createSandbox).not.toHaveBeenCalled();
+        expect(tool.execute).toHaveBeenCalledWith({ input: "x" }, "sbx-existing");
+
+        const creatingEvent = events.find(
+            (e) => e.type === "AGENT_STATUS" && e.content === "Creating sandbox...",
+        );
+        expect(creatingEvent).toBeUndefined();
+    });
+
+    it("should not create a sandbox for tools that do not require it", async () => {
+        const tool = createMockTool();
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
+                finishReason: "tool_calls",
+            },
+            { content: "Done", toolCalls: null, finishReason: "stop" },
+        ]);
+        const createSandbox = vi.fn().mockResolvedValue("sbx-1");
+
+        await runLoop({
+            messages: BASE_MESSAGES,
+            tools: [tool],
+            onEvent: (e) => events.push(e),
+            modelFn,
+            createSandbox,
+        });
+
+        expect(createSandbox).not.toHaveBeenCalled();
+        expect(tool.execute).toHaveBeenCalledWith({ input: "x" }, "");
+
+        const creatingEvent = events.find(
+            (e) => e.type === "AGENT_STATUS" && e.content === "Creating sandbox...",
+        );
+        expect(creatingEvent).toBeUndefined();
+    });
+
+    it("should create a sandbox when the tool requires it", async () => {
+        const tool = createMockTool({ requiresSandbox: true });
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
+                finishReason: "tool_calls",
+            },
+            { content: "Done", toolCalls: null, finishReason: "stop" },
+        ]);
+        const createSandbox = vi.fn().mockResolvedValue("sbx-1");
+
+        await runLoop({
+            messages: BASE_MESSAGES,
+            tools: [tool],
+            onEvent: (e) => events.push(e),
+            modelFn,
+            createSandbox,
+        });
+
+        expect(createSandbox).toHaveBeenCalledTimes(1);
+        expect(tool.execute).toHaveBeenCalledWith({ input: "x" }, "sbx-1");
     });
 });
