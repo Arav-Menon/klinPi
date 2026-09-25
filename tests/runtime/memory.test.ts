@@ -3,14 +3,16 @@ import { getDb } from "@klinpi/db";
 import { schema } from "@klinpi/db";
 import { eq } from "drizzle-orm";
 import { MemoryService } from "../../packages/runtime/src/state/memory.js";
+import { memoryConfig } from "../../packages/runtime/src/lib/memoryConfig.js";
 import type { EmbeddingProvider } from "../../packages/runtime/src/state/types.js";
 
 class MockEmbeddingProvider implements EmbeddingProvider {
-  readonly dimension = 1024;
+  readonly dimension = memoryConfig.embedding.dimension;
 
   async embed(text: string): Promise<number[]> {
-    const embedding = new Array(1024).fill(0);
-    for (let i = 0; i < Math.min(text.length, 1024); i++) {
+    const dim = this.dimension;
+    const embedding = new Array(dim).fill(0);
+    for (let i = 0; i < Math.min(text.length, dim); i++) {
       embedding[i] = text.charCodeAt(i) / 1000;
     }
     return embedding;
@@ -28,7 +30,33 @@ describe("MemoryService", () => {
   beforeEach(async () => {
     service = new MemoryService(new MockEmbeddingProvider());
 
-    await getDb()
+    const db = getDb();
+
+    await db
+      .insert(schema.users)
+      .values({
+        id: TEST_USER_ID,
+        email: "memory-test@klinpi.dev",
+        name: "Memory Test User",
+      })
+      .onConflictDoNothing();
+
+    await db
+      .insert(schema.repositories)
+      .values({
+        id: TEST_REPO_ID,
+        userId: TEST_USER_ID,
+        provider: "GITHUB",
+        providerRepoId: "memory-test-repo",
+        owner: "memory-test",
+        name: "memory-test",
+        fullName: "memory-test/memory-test",
+        cloneUrl: "https://github.com/memory-test/memory-test.git",
+        defaultBranch: "main",
+      })
+      .onConflictDoNothing();
+
+    await db
       .delete(schema.memories)
       .where(eq(schema.memories.userId, TEST_USER_ID));
   });
@@ -47,7 +75,7 @@ describe("MemoryService", () => {
       expect(memory.type).toBe("USER_PREFERENCE");
       expect(memory.content).toBe("User prefers dark mode");
       expect(memory.embedding).toBeDefined();
-      expect(memory.embedding!.length).toBe(1024);
+      expect(memory.embedding!.length).toBe(memoryConfig.embedding.dimension);
       expect(memory.importance).toBe("MEDIUM");
     });
 
@@ -178,7 +206,7 @@ describe("MemoryService", () => {
       expect(updated).toBeDefined();
       expect(updated!.content).toBe("New preference");
       expect(updated!.embedding).toBeDefined();
-      expect(updated!.embedding!.length).toBe(1024);
+      expect(updated!.embedding!.length).toBe(memoryConfig.embedding.dimension);
     });
 
     it("should update memory importance", async () => {
@@ -385,6 +413,19 @@ describe("MemoryService", () => {
     });
 
     it("should allow same content for different users", async () => {
+      await getDb()
+        .insert(schema.users)
+        .values({
+          id: "another-user-id",
+          email: "another-user-memory@klinpi.dev",
+          name: "Another User",
+        })
+        .onConflictDoNothing();
+
+      await getDb()
+        .delete(schema.memories)
+        .where(eq(schema.memories.userId, "another-user-id"));
+
       await service.createMemory({
         userId: TEST_USER_ID,
         type: "USER_PREFERENCE",
