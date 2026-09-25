@@ -27,5 +27,6 @@ export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY as string;
 export const E2B_API_KEY = process.env.E2B_API_KEY as string;
 
 export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+export const CHAT_MODEL = process.env.CHAT_MODEL || "qwen3:4b";
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "qwen3-embedding:latest";
 export const EMBEDDING_DIMENSION = Number(process.env.EMBEDDING_DIMENSION ?? 1024);
