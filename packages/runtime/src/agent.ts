@@ -11,7 +11,7 @@ import { getTools } from "./tools/index.js";
 import { runLoop } from "./loop.js";
 import { callModelWithTools } from "./model.js";
 import { SYSTEM_PROMPT } from "./lib/system-prompt.js";
-import { createSandbox } from "@klinpi/compute";
+import { sessionSandboxService } from "./sandbox/sessionSandboxService.js";
 import { getDb, schema } from "@klinpi/db";
 import { eq } from "drizzle-orm";
 
@@ -110,7 +110,12 @@ export class Agent {
                 memories,
             });
 
-            const tools = getTools();
+            const tools = getTools({
+                memoryService: this.memoryService,
+                userId,
+                sessionId,
+                repositoryId: repositoryId || null,
+            });
 
             let repositoryCloneUrl: string | undefined;
             let repositoryDefaultBranch: string | undefined;
@@ -155,26 +160,30 @@ export class Agent {
             if (repositoryCloneUrl) {
                 const cloneUrl = repositoryCloneUrl;
                 const branch = repositoryDefaultBranch ?? "main";
-                loopInput.createSandbox = async () => {
-                    const { sandbox } = await createSandbox();
-                    emit({ type: "AGENT_STATUS", content: `Cloning ${cloneUrl} (branch: ${branch})...` });
-                    const result = await sandbox.commands.run(
-                        `git clone --branch ${branch} ${cloneUrl} /workspace`,
+
+                try {
+                    const existingSandboxId = await sessionSandboxService.refresh(sessionId);
+                    if (existingSandboxId) {
+                        emit({
+                            type: "AGENT_STATUS",
+                            content: `Existing sandbox found — lifetime extended (30 min): ${existingSandboxId}`,
+                        });
+                        loopInput.initialSandboxId = existingSandboxId;
+                    }
+                } catch (error) {
+                    console.warn(
+                        "Sandbox refresh failed, continuing without an existing sandbox:",
+                        error,
                     );
-                    if (result.exitCode !== 0) {
-                        throw new Error(`Clone failed: ${result.stderr}`);
-                    }
-                    emit({ type: "AGENT_STATUS", content: "Repository cloned successfully" });
-                    return sandbox.sandboxId;
-                };
-                loopInput.destroySandbox = async () => {
-                    try {
-                        const { sandboxManger } = await import("@klinpi/compute");
-                        await sandboxManger.destroySbx();
-                    } catch {
-                        // Sandbox cleanup is best-effort
-                    }
-                };
+                }
+
+                loopInput.createSandbox = async () =>
+                    sessionSandboxService.ensure({
+                        sessionId,
+                        cloneUrl,
+                        branch,
+                        onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
+                    });
             }
 
             await runLoop(loopInput);
