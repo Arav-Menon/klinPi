@@ -165,7 +165,7 @@ describe("Agent", () => {
             expect(errorEvent!.content).toContain("Model API down");
         });
 
-        it("should emit AGENT_ERROR when memory service fails", async () => {
+        it("should continue without memories when memory service fails", async () => {
             (
                 mockMemoryService.retrieveRelevant as ReturnType<typeof vi.fn>
             ).mockRejectedValue(new Error("DB connection failed"));
@@ -173,9 +173,9 @@ describe("Agent", () => {
             const events: AgentEventPayload[] = [];
             await agent.run(VALID_INPUT, (e) => events.push(e));
 
-            const errorEvent = events.find((e) => e.type === "AGENT_ERROR");
-            expect(errorEvent).toBeDefined();
-            expect(errorEvent!.content).toContain("DB connection failed");
+            expect(events.find((e) => e.type === "AGENT_ERROR")).toBeUndefined();
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+            expect(mockModelFn).toHaveBeenCalled();
         });
     });
 
