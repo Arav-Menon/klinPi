@@ -11,7 +11,7 @@ const PASSWORD = "password123";
 const redis = createRedisClient();
 
 async function flushRateLimitKeys() {
-    const keys = await redis.keys("limit:*");
+    const keys = await redis.keys("rl:*");
     if (keys.length > 0) {
         await redis.del(...keys);
     }
