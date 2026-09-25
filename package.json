@@ -7,6 +7,7 @@
   "author": "Arav-menon",
   "license": "MIT",
   "scripts": {
+    "build": "pnpm --filter \"!@klinpi/studio\" -r build",
     "test": "vitest",
     "dev:studio": "cd packages/studio && pnpm dev",
     "dev:gateway": "cd packages/gateway && pnpm run dev",
