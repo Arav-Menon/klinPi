@@ -5,9 +5,10 @@ import { eq, and } from "drizzle-orm";
 import { cacheData } from "../lib/cache.js";
 import { CACHE_TTL, cacheKeys } from "../lib/redisKeys.js";
 import { clientRPC } from "../services/client-RPC/rpc-client.js";
+import { sessionRouter, safeSend } from "./SessionRouter.js";
 
 export interface AgentCallData extends ClientRpc {
-    repositoryId?: string;
+    repositoryId?: string | undefined;
     socket: WebSocket;
 }
 
@@ -16,14 +17,72 @@ interface ClientRpc {
     sessionId?: string | undefined;
     prompt: string;
     socket: WebSocket;
-    repositoryId?: string;
+    repositoryId?: string | undefined;
+}
+
+interface SessionRecord {
+    id: string;
+    userId: string;
+    repositoryId: string | null;
+}
+
+export const EVENT_TYPE_NAMES: Record<number, string> = {
+    0: "EVENT_TYPE_UNSPECIFIED",
+    1: "AGENT_MESSAGE",
+    2: "AGENT_STATUS",
+    3: "TOOL_CALL",
+    4: "TOOL_RESULT",
+    5: "AGENT_ERROR",
+    6: "AGENT_COMPLETED",
+};
+
+export function normalizeEventType(type: unknown): string {
+    if (typeof type === "string" && type.length > 0) return type;
+    if (typeof type === "number") return EVENT_TYPE_NAMES[type] ?? "EVENT_TYPE_UNSPECIFIED";
+    return "EVENT_TYPE_UNSPECIFIED";
+}
+
+function toTimestamp(value: unknown): number {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") return Number(value) || 0;
+    if (value && typeof value === "object") {
+        const candidate = value as { toNumber?: () => number; low?: number; high?: number };
+        if (typeof candidate.toNumber === "function") {
+            const numeric = candidate.toNumber();
+            return Number.isFinite(numeric) ? numeric : 0;
+        }
+        if (typeof candidate.low === "number" && typeof candidate.high === "number") {
+            return candidate.high * 0x100000000 + (candidate.low >>> 0);
+        }
+    }
+    return 0;
+}
+
+export function buildAgentEnvelope(
+    event: Record<string, any>,
+    userId: string,
+    fallbackSessionId?: string,
+): Record<string, unknown> {
+    return {
+        type: "AGENT_EVENT",
+        event: {
+            userId,
+            sessionId: event.sessionId || fallbackSessionId || "",
+            eventType: normalizeEventType(event.type),
+            content: event.content ?? "",
+            toolCall: event.toolCall ?? null,
+            toolResult: event.toolResult ?? null,
+            timestamp: toTimestamp(event.timestamp),
+            sequence: typeof event.sequence === "number" ? event.sequence : 0,
+        },
+    };
 }
 
 export class AgentSessionManager {
     private clientRPC = clientRPC;
 
     async SessionCheck({ sessionId, repositoryId, userId, prompt, socket }: AgentCallData): Promise<void> {
-        let session;
+        let session: SessionRecord | undefined;
 
         if (sessionId == undefined) {
             const database = db();
@@ -37,13 +96,18 @@ export class AgentSessionManager {
                     repositoryId: repositoryId ?? null,
                 })
                 .returning();
+
+            if (!newSession) {
+                socket.send(JSON.stringify({ type: "error", message: "Failed to create session" }));
+                return;
+            }
             session = newSession;
 
             await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
-            await cacheData.setCache(cacheKeys.session(session!.id), session, CACHE_TTL.SESSION);
+            await cacheData.setCache(cacheKeys.session(newSession.id), newSession, CACHE_TTL.SESSION);
         } else {
             const cacheKey = cacheKeys.session(sessionId);
-            const checkSessionCache = await cacheData.getCache(cacheKey);
+            const checkSessionCache = (await cacheData.getCache(cacheKey)) as SessionRecord | null;
 
             if (checkSessionCache && checkSessionCache.userId === userId) {
                 session = checkSessionCache;
@@ -55,7 +119,6 @@ export class AgentSessionManager {
                     .where(
                         and(
                             eq(agentSessions.id, sessionId),
-                            eq(agentSessions.repositoryId, repositoryId as string),
                             eq(agentSessions.userId, userId),
                         )
                     )
@@ -73,10 +136,12 @@ export class AgentSessionManager {
             return;
         }
 
+        await sessionRouter.register(socket, session.id);
+
         const data: AgentCallData = {
             userId: userId,
             sessionId: session.id,
-            repositoryId: session.repositoryId,
+            repositoryId: session.repositoryId ?? undefined,
             prompt: prompt,
             socket: socket,
         };
@@ -98,28 +163,20 @@ export class AgentSessionManager {
         })
 
         stream.on("data", (event: any) => {
-            console.log(event)
-            data.socket.send(JSON.stringify({
-                type: "AGENT_EVENT",
-                event: {
-                    userId: data.userId,
-                    sessionId: event.sessionId,
-                    eventType: event.type,
-                    content: event.content,
-                    toolCall: event.toolCall,
-                    toolResult: event.toolResult,
-                }
-
-            }))
-        })
+            const sessionId = event.sessionId || data.sessionId || "";
+            const envelope = buildAgentEnvelope(event, data.userId, data.sessionId);
+            sessionRouter.publish(sessionId, envelope).catch((error) => {
+                console.error("Failed to publish agent event:", error);
+            });
+        });
 
         stream.on("end", () => {
-            console.log("AGENT_COMPLETED")
-            data.socket.send(JSON.stringify({ type: "AGENT_COMPLETED" }))
+            console.log(`Agent stream ended for session ${data.sessionId}`);
         });
 
         stream.on("error", (error: any) => {
             console.error("Stream error:", error);
+            safeSend(data.socket, JSON.stringify({ type: "error", message: "Agent stream failed" }));
         });
     }
 }
