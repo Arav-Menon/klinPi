@@ -13,7 +13,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ws": "^8.21.3"
+    "@klinpi/db": "workspace:*",
+    "@klinpi/common": "workspace:*",
+    "drizzle-orm": "^0.44.2",
+    "dotenv": "^17.4.2",
+    "ws": "^8.21.3",
+    "@klinpi/redis": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1"

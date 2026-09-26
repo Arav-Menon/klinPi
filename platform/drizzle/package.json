@@ -1,0 +1,29 @@
+{
+  "name": "@klinpi/db",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -b",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate",
+    "studio": "drizzle-kit studio"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema.js"
+  },
+  "dependencies": {
+    "@klinpi/common": "workspace:*",
+    "drizzle-orm": "^0.44.2",
+    "pg": "^8.16.3",
+    "pgvector": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/pg": "^8.15.4",
+    "drizzle-kit": "^0.31.1",
+    "typescript": "^7.0.2"
+  }
+}

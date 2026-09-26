@@ -1,15 +1,26 @@
 {
-  "name": "compute",
+  "name": "@klinpi/compute",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "E2B sandbox compute utilities",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -b",
+    "dev": "tsx ./src/sandbox.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@klinpi/common": "workspace:*",
+    "@e2b/code-interpreter": "^2.8.0",
     "e2b": "^2.39.0"
   }
 }

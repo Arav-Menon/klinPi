@@ -1,0 +1,27 @@
+{
+  "name": "@klinpi/common",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -b"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express-rate-limit": "^8.6.2",
+    "@klinpi/redis": "workspace:*",
+    "jsonwebtoken": "^9.0.2",
+    "rate-limit-redis": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.9"
+  }
+}
