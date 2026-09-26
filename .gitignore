@@ -20,3 +20,6 @@ packages/gateway/dist
 
 packages/realtime/node_modules
 packages/realtime/dist
+
+design.md
+skill.md
