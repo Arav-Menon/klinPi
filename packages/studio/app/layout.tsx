@@ -1,33 +1,46 @@
-import type {Metadata} from "next";
-import {Inter} from "next/font/google";
+import type { Metadata } from "next";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "lenis/dist/lenis.css";
+import SmoothScroll from "./components/smooth-scroll";
 
 const inter = Inter({
-    variable: "--font-inter",
-    subsets: ["latin"],
-    weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-    title: "Klinpi — The Intelligent Routing Layer for AI Agents",
-    description:
-        "Klinpi intelligently routes every LLM request to the right model, balancing quality, speed and cost automatically.",
+  title: "Klinpi | Agent for your repositories",
+  description:
+    "Connect a GitHub repository, hand Klinpi a task, and the agent reads the code, edits files and runs the work in an isolated cloud sandbox streaming every step back to you.",
 };
 
 export default function RootLayout({
-                                       children,
-                                   }: Readonly<{
-    children: React.ReactNode;
+  children,
+}: Readonly<{
+  children: React.ReactNode;
 }>) {
-    return (
-        <html lang="en" className={`${inter.variable} h-full antialiased`}>
-        <body className="relative min-h-full bg-background font-sans text-foreground overflow-x-hidden">
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-primary"/>
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-secondary"/>
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-grid"/>
-        <div className="pointer-events-none fixed inset-0 -z-10 bg-noise opacity-50"/>
-        {children}
-        </body>
-        </html>
-    );
+  return (
+    <html
+      lang="en"
+      className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
+    >
+      <body className="relative min-h-full bg-background font-sans text-foreground">
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
+        <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-primary" />
+        <div className="pointer-events-none fixed inset-0 -z-10 bg-grid" />
+        <div className="pointer-events-none fixed inset-0 -z-10 bg-noise" />
+        <SmoothScroll>{children}</SmoothScroll>
+      </body>
+    </html>
+  );
 }
