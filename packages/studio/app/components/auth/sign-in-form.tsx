@@ -8,7 +8,7 @@ import { AuthField } from "@/app/components/auth/auth-field";
 import { OAuthButton } from "@/app/components/auth/oauth-button";
 import { Button } from "@/app/components/ui/button";
 import { LoaderCircle } from "lucide-react";
-import { signin } from "@/lib/api";
+import { consolePath, getConsolePath, signin } from "@/lib/api";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -60,8 +60,10 @@ export function SignInForm() {
 
     setSubmitting(true);
     try {
-      await signin(email.trim(), password);
-      router.push("/");
+      const data = await signin(email.trim(), password);
+      const userId = (data as { user?: { id?: string } } | null)?.user?.id;
+      // Post-sign-in: land in the user's personal console.
+      router.push(userId ? consolePath(userId) : await getConsolePath());
       router.refresh();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
