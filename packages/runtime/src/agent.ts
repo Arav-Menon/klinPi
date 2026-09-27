@@ -83,11 +83,22 @@ export class Agent {
                 { limit: 20 },
             );
 
-            await this.messageService.createMessage({
-                sessionId,
-                role: "USER",
-                content: prompt,
-            });
+            // The gateway persists the USER prompt when a session is created
+            // over HTTP; skip re-inserting an identical trailing prompt (the
+            // WS auto-create path still inserts here).
+            const lastMessage = recentMessages[recentMessages.length - 1];
+            const promptAlreadyPersisted =
+                lastMessage !== undefined &&
+                lastMessage.role === "USER" &&
+                lastMessage.content === prompt;
+
+            if (!promptAlreadyPersisted) {
+                await this.messageService.createMessage({
+                    sessionId,
+                    role: "USER",
+                    content: prompt,
+                });
+            }
 
             let memories: Awaited<ReturnType<typeof this.memoryService.retrieveRelevant>> = [];
             try {
@@ -157,34 +168,35 @@ export class Agent {
                 modelFn: this.modelFn,
             };
 
-            if (repositoryCloneUrl) {
-                const cloneUrl = repositoryCloneUrl;
-                const branch = repositoryDefaultBranch ?? "main";
-
-                try {
-                    const existingSandboxId = await sessionSandboxService.refresh(sessionId);
-                    if (existingSandboxId) {
-                        emit({
-                            type: "AGENT_STATUS",
-                            content: `Existing sandbox found — lifetime extended (30 min): ${existingSandboxId}`,
-                        });
-                        loopInput.initialSandboxId = existingSandboxId;
-                    }
-                } catch (error) {
-                    console.warn(
-                        "Sandbox refresh failed, continuing without an existing sandbox:",
-                        error,
-                    );
-                }
-
-                loopInput.createSandbox = async () =>
-                    sessionSandboxService.ensure({
-                        sessionId,
-                        cloneUrl,
-                        branch,
-                        onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
+            // Sandbox lifecycle is runtime-owned for every session: reuse an
+            // existing one, and lazily create on the first sandbox-dependent
+            // tool (cloning the linked repository when one exists, otherwise
+            // preparing an empty workspace).
+            try {
+                const existingSandboxId = await sessionSandboxService.refresh(sessionId);
+                if (existingSandboxId) {
+                    emit({
+                        type: "AGENT_STATUS",
+                        content: `Existing sandbox found — lifetime extended (30 min): ${existingSandboxId}`,
                     });
+                    loopInput.initialSandboxId = existingSandboxId;
+                }
+            } catch (error) {
+                console.warn(
+                    "Sandbox refresh failed, continuing without an existing sandbox:",
+                    error,
+                );
             }
+
+            const cloneUrl = repositoryCloneUrl;
+            loopInput.createSandbox = async () =>
+                sessionSandboxService.ensure({
+                    sessionId,
+                    ...(cloneUrl
+                        ? { cloneUrl, branch: repositoryDefaultBranch ?? "main" }
+                        : {}),
+                    onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
+                });
 
             await runLoop(loopInput);
 
