@@ -44,17 +44,32 @@ export class ContextBuilder {
 
     if (input.recentMessages && input.recentMessages.length > 0) {
       for (const msg of input.recentMessages) {
+        // DB roles are uppercase enums (USER/ASSISTANT/SYSTEM) while the
+        // model wire API expects lowercase — normalize on the way out.
+        const raw = msg.role.toLowerCase();
+        const role: "user" | "assistant" | "system" =
+          raw === "assistant" || raw === "system" ? raw : "user";
         messages.push({
-          role: msg.role as "user" | "assistant",
+          role,
           content: msg.content,
         });
       }
     }
 
-    messages.push({
-      role: "user",
-      content: input.currentPrompt,
-    });
+    // History may already end with the current prompt (the gateway persists
+    // it at session creation) — don't append an identical trailing message.
+    const lastRecent = input.recentMessages?.[input.recentMessages.length - 1];
+    const promptAlreadyInHistory =
+      lastRecent !== undefined &&
+      lastRecent.role.toLowerCase() === "user" &&
+      lastRecent.content === input.currentPrompt;
+
+    if (!promptAlreadyInHistory) {
+      messages.push({
+        role: "user",
+        content: input.currentPrompt,
+      });
+    }
 
     return { messages };
   }
