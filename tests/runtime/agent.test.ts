@@ -125,6 +125,81 @@ describe("Agent", () => {
         });
     });
 
+    describe("initial prompt dedup (gateway-persisted first message)", () => {
+        it("skips persisting the prompt when history already ends with it", async () => {
+            (mockMessageService.getMessages as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    id: "msg-gateway",
+                    sessionId: VALID_INPUT.sessionId,
+                    role: "USER",
+                    content: VALID_INPUT.prompt,
+                    metadata: null,
+                    createdAt: new Date(),
+                },
+            ]);
+
+            const events: AgentEventPayload[] = [];
+            await agent.run(VALID_INPUT, (e) => events.push(e));
+
+            const userWrites = (
+                mockMessageService.createMessage as ReturnType<typeof vi.fn>
+            ).mock.calls.filter((call) => (call[0] as { role: string }).role === "USER");
+            expect(userWrites).toHaveLength(0);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+        });
+
+        it("persists the prompt when history ends with a different message", async () => {
+            (mockMessageService.getMessages as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    id: "msg-earlier-user",
+                    sessionId: VALID_INPUT.sessionId,
+                    role: "USER",
+                    content: "an earlier prompt",
+                    metadata: null,
+                    createdAt: new Date(),
+                },
+                {
+                    id: "msg-earlier-assistant",
+                    sessionId: VALID_INPUT.sessionId,
+                    role: "ASSISTANT",
+                    content: "an earlier answer",
+                    metadata: null,
+                    createdAt: new Date(),
+                },
+            ]);
+
+            const events: AgentEventPayload[] = [];
+            await agent.run(VALID_INPUT, (e) => events.push(e));
+
+            expect(mockMessageService.createMessage).toHaveBeenCalledWith({
+                sessionId: VALID_INPUT.sessionId,
+                role: "USER",
+                content: VALID_INPUT.prompt,
+            });
+        });
+
+        it("persists the prompt when the trailing message is an assistant reply", async () => {
+            (mockMessageService.getMessages as ReturnType<typeof vi.fn>).mockResolvedValue([
+                {
+                    id: "msg-assistant-tail",
+                    sessionId: VALID_INPUT.sessionId,
+                    role: "ASSISTANT",
+                    content: VALID_INPUT.prompt,
+                    metadata: null,
+                    createdAt: new Date(),
+                },
+            ]);
+
+            await agent.run(VALID_INPUT, () => {});
+
+            expect(mockMessageService.createMessage).toHaveBeenCalledWith({
+                sessionId: VALID_INPUT.sessionId,
+                role: "USER",
+                content: VALID_INPUT.prompt,
+            });
+        });
+    });
+
     describe("memory retrieval", () => {
         it("should call memoryService with correct userId and repositoryId", async () => {
             const events: AgentEventPayload[] = [];
