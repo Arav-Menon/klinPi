@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import type Lenis from "lenis";
 
 let activeLenis: Lenis | null = null;
@@ -35,7 +36,17 @@ export function resumeSmoothScroll() {
  *   re-created if the preference changes at runtime.
  */
 export default function SmoothScroll({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  // The console and session routes are fixed-height application
+  // workspaces (`h-dvh` shell) whose conversation, sidebar and tool
+  // panels scroll internally — window-level smooth scroll must not run
+  // there, otherwise Lenis swallows wheel events and no inner panel can
+  // scroll.
+  const enabled =
+    !pathname.startsWith("/console") && !pathname.startsWith("/session");
+
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false;
     let teardown: (() => void) | undefined;
 
@@ -129,7 +140,7 @@ export default function SmoothScroll({ children }: { children: ReactNode }) {
       media.removeEventListener("change", onMediaChange);
       stop();
     };
-  }, []);
+  }, [enabled]);
 
   return <>{children}</>;
 }
