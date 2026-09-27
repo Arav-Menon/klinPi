@@ -1,5 +1,5 @@
 import {Router} from "express";
-import {signup, signin, logout, me} from "../controller/auth.controller.js";
+import {signup, signin, logout, me, wsToken} from "../controller/auth.controller.js";
 import {authMiddleware} from "../../middleware/auth.middleware.js";
 import {validate} from "../../middleware/validate.js";
 import {signupSchema, signinSchema} from "../../types/validation/auth/auth.schema.js";
@@ -11,5 +11,6 @@ router.post("/signup", validate(signupSchema), authLimit, signup);
 router.post("/signin", validate(signinSchema), authLimit, signin);
 router.post("/logout", authMiddleware, logout);
 router.get("/me", authMiddleware, me);
+router.get("/ws-token", authMiddleware, wsToken);
 
 export default router;
