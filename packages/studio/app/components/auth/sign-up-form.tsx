@@ -8,7 +8,7 @@ import { AuthError } from "@/app/components/auth/auth-error";
 import { AuthField } from "@/app/components/auth/auth-field";
 import { OAuthButton } from "@/app/components/auth/oauth-button";
 import { Button } from "@/app/components/ui/button";
-import { signup } from "@/lib/api";
+import { consolePath, getConsolePath, signup } from "@/lib/api";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -85,8 +85,10 @@ export function SignUpForm() {
 
     setSubmitting(true);
     try {
-      await signup(trimmedName, trimmedEmail, password);
-      router.push("/");
+      const data = await signup(trimmedName, trimmedEmail, password);
+      const userId = (data as { user?: { id?: string } } | null)?.user?.id;
+      // Post-sign-up: land in the user's personal console.
+      router.push(userId ? consolePath(userId) : await getConsolePath());
       router.refresh();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Sign-up failed. Please try again.");
