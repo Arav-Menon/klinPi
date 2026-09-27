@@ -9,8 +9,9 @@ type StatusCallback = (content: string) => void;
 
 export interface EnsureSandboxParams {
     sessionId: string;
-    cloneUrl: string;
-    branch: string;
+    /** When present the workspace is cloned from this repo; otherwise an empty workspace is prepared. */
+    cloneUrl?: string;
+    branch?: string;
     onStatus: StatusCallback;
 }
 
@@ -69,6 +70,7 @@ export class SessionSandboxService {
 
     async ensure(params: EnsureSandboxParams): Promise<string> {
         const { sessionId, cloneUrl, branch, onStatus } = params;
+        const effectiveBranch = branch ?? "main";
 
         const reusedId = await this.refresh(sessionId);
         if (reusedId) {
@@ -88,7 +90,7 @@ export class SessionSandboxService {
                     providerSandboxId: sandboxId,
                     status: "CREATING",
                     workspacePath: WORKSPACE_PATH,
-                    branchName: branch,
+                    branchName: cloneUrl ? effectiveBranch : null,
                     lastActiveAt: new Date(),
                 })
                 .returning({ id: schema.sandboxes.id });
@@ -106,11 +108,16 @@ export class SessionSandboxService {
             throw error;
         }
 
-        onStatus(`Cloning ${cloneUrl} (branch: ${branch})...`);
+        onStatus(
+            cloneUrl
+                ? `Cloning ${cloneUrl} (branch: ${effectiveBranch})...`
+                : "Preparing workspace (no repository linked)...",
+        );
+        const prepareCommand = cloneUrl
+            ? `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH} && git clone --branch ${effectiveBranch} ${cloneUrl} ${WORKSPACE_PATH}`
+            : `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH}`;
         try {
-            const result = await sandbox.commands.run(
-                `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH} && git clone --branch ${branch} ${cloneUrl} ${WORKSPACE_PATH}`,
-            );
+            const result = await sandbox.commands.run(prepareCommand);
             if (result.exitCode !== 0) {
                 throw new Error(result.stderr || `exit status ${result.exitCode}`);
             }
@@ -119,8 +126,12 @@ export class SessionSandboxService {
             const raw =
                 (typeof stderr === "string" && stderr.trim()) ||
                 (error instanceof Error ? error.message : String(error));
-            const detail = raw.startsWith("Clone failed") ? raw : `Clone failed: ${raw}`;
-            console.error(`[Clone] ${detail}`);
+            const detail = cloneUrl
+                ? raw.startsWith("Clone failed")
+                    ? raw
+                    : `Clone failed: ${raw}`
+                : raw;
+            console.error(`[Sandbox prepare] ${detail}`);
             try {
                 await this.db
                     .update(schema.sandboxes)
@@ -141,7 +152,7 @@ export class SessionSandboxService {
             console.error("[SessionSandbox] Failed to mark sandbox RUNNING:", error);
         }
 
-        onStatus("Repository cloned successfully");
+        onStatus(cloneUrl ? "Repository cloned successfully" : "Workspace ready");
         return sandboxId;
     }
 

@@ -27,6 +27,9 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
 
+  /* Restrained interactive accent (design.md color.text.inverse) */
+  --color-accent-blue: var(--accent-blue);
+
   /* shadcn */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -108,6 +111,7 @@
   --success: #15803d;
   --warning: #b45309;
   --danger: #b91c1c;
+  --accent-blue: #1d6fd1;
 
   --chart-1: #15803d;
   --chart-2: #1d4ed8;
@@ -163,6 +167,7 @@
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
+  --accent-blue: #49b0ff;
 }
 
 @layer base {
@@ -239,6 +244,25 @@
 
   .skip-link:focus-visible {
     transform: translateY(0);
+  }
+
+  /* Agent demo scroll-expansion frame. Defaults reproduce the original
+     mx-auto w-full max-w-6xl sizing exactly: with zero bleed the `100%`
+     term equals the container content width, so progress 0 is unchanged
+     at every viewport. Scroll progress drives the custom properties;
+     min() keeps the expanded state viewport-clamped (no overflow). */
+  .agent-demo-frame {
+    --agent-demo-max: 72rem;
+    --agent-demo-gutter: 3rem;
+    --agent-demo-bleed: 0rem;
+    --agent-demo-h: 34rem;
+    --agent-demo-w: min(
+      var(--agent-demo-max),
+      calc(100vw - var(--agent-demo-gutter)),
+      calc(100% + 2 * var(--agent-demo-bleed))
+    );
+    width: var(--agent-demo-w);
+    margin-inline: calc((100% - var(--agent-demo-w)) / 2);
   }
 }
 

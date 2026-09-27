@@ -1,6 +1,6 @@
 import { getDb } from "@klinpi/db";
 import { schema } from "@klinpi/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import type {
   MessageRecord,
   CreateMessageInput,
@@ -44,6 +44,11 @@ export class MessageService {
     return rowToRecord(row as MessageRow);
   }
 
+  /**
+   * Most recent `limit` messages, returned oldest-first so callers can
+   * use them as conversation context directly. (Ordering desc + limit
+   * picks the newest window; reversed for chronological display.)
+   */
   async getMessages(
     sessionId: string,
     options?: { limit?: number },
@@ -54,10 +59,10 @@ export class MessageService {
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.sessionId, sessionId))
-      .orderBy(asc(schema.messages.createdAt))
+      .orderBy(desc(schema.messages.createdAt))
       .limit(limit);
 
-    return rows.map((r) => rowToRecord(r as MessageRow));
+    return rows.reverse().map((r) => rowToRecord(r as MessageRow));
   }
 
   async getMessage(

@@ -199,6 +199,42 @@ describe("SessionSandboxService", () => {
             expect(rows[0].branchName).toBe("main");
         });
 
+        it("should create an empty workspace sandbox when no repository is linked", async () => {
+            const sandboxId = `sbx-empty-${crypto.randomUUID()}`;
+            const fakeSandbox = {
+                sandboxId,
+                commands: {
+                    run: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" }),
+                },
+                kill: vi.fn(),
+                setTimeout: vi.fn(),
+            };
+            computeMocks.create.mockResolvedValue({ sandbox: fakeSandbox, sandboxId });
+
+            const statuses: string[] = [];
+            const result = await sessionSandboxService.ensure({
+                sessionId: TEST_SESSION_ID,
+                onStatus: (content) => statuses.push(content),
+            });
+
+            expect(result).toBe(sandboxId);
+            const command = fakeSandbox.commands.run.mock.calls[0][0] as string;
+            expect(command).toContain("sudo mkdir -p /workspace");
+            expect(command).not.toContain("git clone");
+
+            expect(statuses).toContain("Preparing workspace (no repository linked)...");
+            expect(statuses).toContain("Workspace ready");
+
+            const db = getDb();
+            const rows = await db
+                .select()
+                .from(schema.sandboxes)
+                .where(eq(schema.sandboxes.providerSandboxId, sandboxId));
+            expect(rows).toHaveLength(1);
+            expect(rows[0].status).toBe("RUNNING");
+            expect(rows[0].branchName).toBeNull();
+        });
+
         it("should mark the row FAILED and surface stderr when the clone fails", async () => {
             const sandboxId = `sbx-fail-${crypto.randomUUID()}`;
             const cloneError = Object.assign(new Error("exit status 128"), {

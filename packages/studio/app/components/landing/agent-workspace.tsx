@@ -87,7 +87,7 @@ export default function AgentWorkspace() {
   const showDiff = termCount >= DEMO_TERMINAL.length;
 
   return (
-    <div ref={ref} className="mx-auto w-full max-w-6xl">
+    <div ref={ref} className="agent-demo-frame" data-agent-demo>
       <motion.div
         initial={reduced ? { opacity: 1 } : { opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -132,7 +132,7 @@ export default function AgentWorkspace() {
         </div>
 
         {/* Body */}
-        <div className="grid grid-cols-1 lg:h-[34rem] lg:grid-cols-[13.5rem_minmax(0,1fr)_minmax(0,22.5rem)]">
+        <div className="grid grid-cols-1 lg:h-[var(--agent-demo-h,34rem)] lg:grid-cols-[13.5rem_minmax(0,1fr)_minmax(0,22.5rem)]">
           {/* Sidebar */}
           <aside className="hidden min-h-0 border-r border-border bg-surface/60 lg:flex lg:flex-col">
             <div className="border-b border-border p-3">

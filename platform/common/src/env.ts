@@ -13,6 +13,9 @@ export const PORT = process.env.PORT || 3100;
 
 export const NEXT_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
+/** Origin of the Next.js app — where OAuth redirects land after sign-in. */
+export const APP_URL = process.env.APP_URL || "http://localhost:3000";
+
 export const REDIS_URL = process.env.REDIS_URL as string | undefined;
 export const REDIS_HOST = process.env.REDIS_HOST ?? "localhost";
 export const REDIS_PORT = Number(process.env.REDIS_PORT ?? 6379);

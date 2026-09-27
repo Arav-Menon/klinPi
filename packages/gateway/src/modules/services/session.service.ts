@@ -1,6 +1,7 @@
 import { db } from "../../lib/db.js";
-import { agentSessions } from "@klinpi/db/schema";
+import { agentSessions, messages, repositories } from "@klinpi/db/schema";
 import { eq, and, ne, desc, gt } from "drizzle-orm";
+import { deriveSessionTitle } from "@klinpi/common";
 import { cacheData } from "../../lib/cache.js";
 import { cacheKeys, CACHE_TTL } from "../../lib/cacheKey.js";
 import type { SessionStatus } from "@klinpi/db";
@@ -27,22 +28,87 @@ type SessionResponse = {
 
 export async function createSession(
   userId: string,
-  data: { title?: string; repositoryId?: string },
-): Promise<SessionResponse> {
+  data: { title?: string; repositoryId?: string; prompt?: string },
+): Promise<SessionResponse | null> {
   const database = db();
-  const [session] = await database
-    .insert(agentSessions)
-    .values({
-      userId,
-      title: data.title ?? null,
-      repositoryId: data.repositoryId ?? null,
-    })
-    .returning(SESSION_COLUMNS);
+
+  // A session may only reference a repository the same user owns.
+  if (data.repositoryId) {
+    const [repo] = await database
+      .select({ id: repositories.id })
+      .from(repositories)
+      .where(and(eq(repositories.id, data.repositoryId), eq(repositories.userId, userId)))
+      .limit(1);
+    if (!repo) return null;
+  }
+
+  const title = data.title ?? (data.prompt ? deriveSessionTitle(data.prompt) : null);
+
+  // Session and its initial USER message are persisted atomically so a
+  // created session is never missing its first message.
+  const session = await database.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(agentSessions)
+      .values({
+        userId,
+        title,
+        repositoryId: data.repositoryId ?? null,
+      })
+      .returning(SESSION_COLUMNS);
+
+    if (data.prompt) {
+      await tx.insert(messages).values({
+        sessionId: inserted!.id,
+        role: "USER",
+        content: data.prompt,
+      });
+    }
+
+    return inserted!;
+  });
 
   await cacheData.deleteCache(cacheKeys.userSessionsRecent(userId));
-  await cacheData.setCache(cacheKeys.session(session!.id), session, CACHE_TTL.SESSION);
+  await cacheData.setCache(cacheKeys.session(session.id), session, CACHE_TTL.SESSION);
 
   return session as SessionResponse;
+}
+
+export type MessageResponse = {
+  id: string;
+  role: string;
+  content: string;
+  metadata: unknown;
+  createdAt: Date;
+};
+
+/**
+ * Persisted conversation history for a session, oldest first.
+ * Returns null when the session does not exist or is not owned by
+ * `userId` (callers map that to a 404 — never leak other users' data).
+ */
+export async function getSessionMessages(
+  userId: string,
+  sessionId: string,
+  limit: number,
+): Promise<MessageResponse[] | null> {
+  const session = await getSession(userId, sessionId);
+  if (!session) return null;
+
+  const database = db();
+  const rows = await database
+    .select({
+      id: messages.id,
+      role: messages.role,
+      content: messages.content,
+      metadata: messages.metadata,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .where(eq(messages.sessionId, sessionId))
+    .orderBy(desc(messages.createdAt))
+    .limit(limit);
+
+  return rows.reverse();
 }
 
 export async function getSession(
@@ -164,7 +230,7 @@ export async function getRecentSessions(
     .select(SESSION_COLUMNS)
     .from(agentSessions)
     .where(and(...conditions))
-    .orderBy(agentSessions.updatedAt)
+    .orderBy(desc(agentSessions.updatedAt))
     .limit(limit + 1);
 
   const hasMore = sessions.length > limit;

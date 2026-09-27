@@ -4,8 +4,8 @@ import * as userService from "../services/user.service.js";
 import * as oauthService from "../services/oauth.service.js";
 import {clearAuthCookie} from "../../lib/jwt.js";
 import { db } from "../../lib/db.js";
-import { oauthAccounts } from "@klinpi/db/schema";
-import { eq, and } from "drizzle-orm";
+import { oauthAccounts, repositories } from "@klinpi/db/schema";
+import { eq, and, sql } from "drizzle-orm";
 
 export async function getProfile(req: AuthenticatedRequest, res: Response) {
     try {
@@ -162,7 +162,58 @@ export async function listRepos(req: AuthenticatedRequest, res: Response) {
             perPage,
         );
 
-        res.json({repos});
+        // Sync the fetched page into `Repository` so sessions can link to it
+        // (`repositoryId` is the DB row id; `id` stays the GitHub id). The
+        // listing itself is best-effort: a sync failure never breaks it.
+        let linked: Array<oauthService.GitHubRepo & { repositoryId: string | null }>;
+        try {
+            let rows: Array<{ id: string; userId: string; providerRepoId: string }> = [];
+            if (repos.length > 0) {
+                rows = await database
+                    .insert(repositories)
+                    .values(
+                        repos.map((repo) => ({
+                            userId,
+                            provider: "GITHUB" as const,
+                            providerRepoId: String(repo.id),
+                            owner: repo.owner.login,
+                            name: repo.name,
+                            fullName: repo.full_name,
+                            cloneUrl: `https://github.com/${repo.full_name}.git`,
+                            defaultBranch: repo.default_branch ?? "main",
+                        })),
+                    )
+                    .onConflictDoUpdate({
+                        target: [repositories.provider, repositories.providerRepoId],
+                        set: {
+                            fullName: sql`excluded."fullName"`,
+                            cloneUrl: sql`excluded."cloneUrl"`,
+                            defaultBranch: sql`excluded."defaultBranch"`,
+                            updatedAt: new Date(),
+                        },
+                    })
+                    .returning({
+                        id: repositories.id,
+                        userId: repositories.userId,
+                        providerRepoId: repositories.providerRepoId,
+                    });
+            }
+            const byProviderId = new Map(rows.map((r) => [r.providerRepoId, r]));
+            linked = repos.map((repo) => {
+                const row = byProviderId.get(String(repo.id));
+                // A shared repo row belongs to whichever user synced it first;
+                // never hand another user a repository they don't own.
+                return {
+                    ...repo,
+                    repositoryId: row && row.userId === userId ? row.id : null,
+                };
+            });
+        } catch (error) {
+            console.error("Repository sync failed:", error);
+            linked = repos.map((repo) => ({ ...repo, repositoryId: null }));
+        }
+
+        res.json({repos: linked});
     } catch (error) {
         console.error("List repos error:", error);
         res.status(500).json({error: "Internal server error"});

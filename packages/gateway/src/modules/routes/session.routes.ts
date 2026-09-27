@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createSession,
   getSession,
+  getSessionMessages,
   updateSession,
   archiveSession,
   getRecentSessions,
@@ -15,6 +16,7 @@ import {
   updateSessionSchema,
   recentSessionsSchema,
   searchSessionsSchema,
+  messagesQuerySchema,
 } from "../../types/validation/session/session.schema.js";
 
 const router: ReturnType<typeof Router> = Router();
@@ -23,6 +25,7 @@ router.post("/", authMiddleware, validate(createSessionSchema), createSession);
 router.get("/recent", authMiddleware, validateQuery(recentSessionsSchema), getRecentSessions);
 router.get("/search", authMiddleware, validateQuery(searchSessionsSchema), searchSessions);
 router.get("/:sessionId", authMiddleware, getSession);
+router.get("/:sessionId/messages", authMiddleware, validateQuery(messagesQuerySchema), getSessionMessages);
 router.patch("/:sessionId", authMiddleware, validate(updateSessionSchema), updateSession);
 router.delete("/:sessionId", authMiddleware, archiveSession);
 

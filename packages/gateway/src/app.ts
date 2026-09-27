@@ -9,15 +9,17 @@ import oauthRoutes from "./modules/routes/oauth.routes.js";
 
 const app: ReturnType<typeof express> = express();
 
-app.use(cors({
-    origin: NEXT_PUBLIC_API_URL,
+app.use(
+  cors({
+    origin: "http://localhost:3000",
     credentials: true,
-}));
+  }),
+);
 app.use(express.json());
 app.use(cookieParser());
 
 app.get("/health", (req, res) => {
-    res.send({status: "ok", service: "klinpi-gateway"});
+  res.send({ status: "ok", service: "klinpi-gateway" });
 });
 
 app.use("/api/v1/auth", authRoutes);
