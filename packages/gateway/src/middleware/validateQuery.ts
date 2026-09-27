@@ -13,7 +13,14 @@ export function validateQuery(schema: ZodSchema) {
       }
       return;
     }
-    req.query = result.data;
+    // Express 5 exposes `req.query` as a getter-only property, so a plain
+    // assignment throws. Shadow it with an own data property instead.
+    Object.defineProperty(req, "query", {
+      value: result.data,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }
