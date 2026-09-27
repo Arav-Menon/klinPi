@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import crypto from "crypto";
-import { NEXT_PUBLIC_API_URL, NODE_ENV } from "@klinpi/common";
+import { APP_URL, NODE_ENV } from "@klinpi/common";
 import * as oauthService from "../services/oauth.service.js";
 import { setAuthCookie } from "../../lib/jwt.js";
 
@@ -67,9 +67,11 @@ export async function githubCallback(req: Request, res: Response) {
 
         setAuthCookie(res, result.token);
 
-        res.redirect(`${NEXT_PUBLIC_API_URL}`);
+        // Land the user directly in their personal console on the app origin.
+        const userId = result.user.id;
+        res.redirect(`${APP_URL}/console/${encodeURIComponent(userId)}/`);
     } catch (error) {
         console.error("GitHub callback error:", error);
-        res.redirect(`${NEXT_PUBLIC_API_URL}?error=oauth_failed`);
+        res.redirect(`${APP_URL}/signin?error=oauth_failed`);
     }
 }
