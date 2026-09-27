@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import { deriveSessionTitle } from "@klinpi/common";
 import { db } from "../lib/db.js";
 import { agentSessions } from "@klinpi/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -90,9 +91,7 @@ export class AgentSessionManager {
                 .insert(agentSessions)
                 .values({
                     userId,
-                    title: prompt.length > 30
-                        ? prompt.slice(0, 30) + "..."
-                        : prompt,
+                    title: deriveSessionTitle(prompt),
                     repositoryId: repositoryId ?? null,
                 })
                 .returning();
