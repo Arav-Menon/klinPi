@@ -10,11 +10,17 @@ export async function createSession(req: AuthenticatedRequest, res: Response) {
       return;
     }
 
-    const { title, repositoryId } = req.body;
+    const { title, repositoryId, prompt } = req.body;
     const session = await sessionService.createSession(userId, {
       title,
       repositoryId,
+      prompt,
     });
+
+    if (!session) {
+      res.status(400).json({ error: "Repository not found" });
+      return;
+    }
 
     res.status(201).json({ session });
   } catch (error) {
@@ -42,6 +48,34 @@ export async function getSession(req: AuthenticatedRequest, res: Response) {
     res.json({ session });
   } catch (error) {
     console.error("Get session error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function getSessionMessages(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const sessionId = req.params.sessionId as string;
+    const { limit } = req.query as unknown as { limit?: number };
+    const result = await sessionService.getSessionMessages(
+      userId,
+      sessionId,
+      limit ?? 200,
+    );
+
+    if (!result) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    res.json({ messages: result });
+  } catch (error) {
+    console.error("Get session messages error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 }
