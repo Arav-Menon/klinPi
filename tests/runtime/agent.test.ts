@@ -1,5 +1,19 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { getDb, schema } from "@klinpi/db";
+import { eq } from "drizzle-orm";
 import { Agent } from "../../packages/runtime/src/agent.js";
+
+const computeMocks = vi.hoisted(() => ({
+    connect: vi.fn(),
+    create: vi.fn(),
+    register: vi.fn(),
+}));
+
+vi.mock("@klinpi/compute", () => ({
+    Sandbox: { connect: computeMocks.connect },
+    createSandbox: computeMocks.create,
+    sandboxManger: { registerSbx: computeMocks.register },
+}));
 import { ContextBuilder } from "../../packages/runtime/src/state/context.js";
 import type { MemoryService } from "../../packages/runtime/src/state/memory.js";
 import type { MessageService } from "../../packages/runtime/src/state/message.js";
@@ -291,6 +305,277 @@ describe("Agent", () => {
             await customAgent.run(VALID_INPUT, (e) => events.push(e));
 
             expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+        });
+    });
+
+    describe("repository context", () => {
+        const CTX_USER_ID = `user-ctx-${crypto.randomUUID()}`;
+        const CTX_SESSION_ID = `session-ctx-${crypto.randomUUID()}`;
+        const CTX_REPO_ID = `repo-ctx-${crypto.randomUUID()}`;
+
+        const getSystemMessage = (): string => {
+            const calls = vi.mocked(mockModelFn).mock.calls;
+            expect(calls.length).toBeGreaterThan(0);
+            const messages = calls[0]![0] as unknown as Array<{ role: string; content: string }>;
+            const system = messages.find((m) => m.role === "system");
+            expect(system).toBeDefined();
+            return system!.content;
+        };
+
+        afterEach(async () => {
+            const db = getDb();
+            await db.delete(schema.users).where(eq(schema.users.id, CTX_USER_ID));
+        });
+
+        async function insertCtxRepository() {
+            const db = getDb();
+            await db
+                .insert(schema.users)
+                .values({
+                    id: CTX_USER_ID,
+                    email: `${CTX_USER_ID}@klinpi.dev`,
+                    name: "Repository Context User",
+                })
+                .onConflictDoNothing();
+            await db
+                .delete(schema.repositories)
+                .where(eq(schema.repositories.id, CTX_REPO_ID));
+            await db.insert(schema.repositories).values({
+                id: CTX_REPO_ID,
+                userId: CTX_USER_ID,
+                provider: "GITHUB",
+                providerRepoId: `pr-${CTX_REPO_ID}`,
+                owner: "test-org",
+                name: "ctx-repo",
+                fullName: "test-org/ctx-repo",
+                cloneUrl: "https://github.com/test-org/ctx-repo.git",
+                defaultBranch: "develop",
+            });
+        }
+
+        it("should include linked repository context in the system message", async () => {
+            await insertCtxRepository();
+
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                {
+                    ...VALID_INPUT,
+                    userId: CTX_USER_ID,
+                    sessionId: CTX_SESSION_ID,
+                    repositoryId: CTX_REPO_ID,
+                },
+                (e) => events.push(e),
+            );
+
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+            const system = getSystemMessage();
+            expect(system).toContain("Repository context:");
+            expect(system).toContain("test-org/ctx-repo");
+            expect(system).toContain("/workspace");
+            expect(system).toContain("develop");
+            expect(system).toContain(
+                "Never claim you have no access to repository or project context",
+            );
+        });
+
+        it("should omit repository context when the repositoryId does not resolve", async () => {
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                { ...VALID_INPUT, repositoryId: `repo-missing-${crypto.randomUUID()}` },
+                (e) => events.push(e),
+            );
+
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+            const system = getSystemMessage();
+            expect(system).not.toContain("Repository context:");
+        });
+
+        it("should omit repository context when no repositoryId is supplied", async () => {
+            const events: AgentEventPayload[] = [];
+            await agent.run({ ...VALID_INPUT, repositoryId: "" }, (e) => events.push(e));
+
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+            expect(getSystemMessage()).not.toContain("Repository context:");
+        });
+    });
+
+    describe("eager repository preparation on an existing sandbox", () => {
+        afterEach(() => {
+            computeMocks.connect.mockReset();
+            computeMocks.create.mockReset();
+            computeMocks.register.mockReset();
+        });
+
+        it("clones the linked repository before the model runs even without a tool call", async () => {
+            const db = getDb();
+            const userId = `user-eager-${crypto.randomUUID()}`;
+            const sessionId = `session-eager-${crypto.randomUUID()}`;
+            const repoId = `repo-eager-${crypto.randomUUID()}`;
+            await db.insert(schema.users).values({
+                id: userId,
+                email: `${userId}@klinpi.dev`,
+                name: "Eager Prepare User",
+            });
+            await db
+                .insert(schema.agentSessions)
+                .values({ id: sessionId, userId, title: "eager prepare" });
+            await db.insert(schema.repositories).values({
+                id: repoId,
+                userId,
+                provider: "GITHUB",
+                providerRepoId: `pr-${repoId}`,
+                owner: "test-org",
+                name: "eager-repo",
+                fullName: "test-org/eager-repo",
+                cloneUrl: "https://github.com/test-org/eager-repo.git",
+                defaultBranch: "main",
+            });
+            await db.insert(schema.sandboxes).values({
+                sessionId,
+                providerSandboxId: "sbx-eager-1",
+                status: "RUNNING",
+                workspacePath: "/workspace",
+                branchName: null,
+                lastActiveAt: new Date(),
+            });
+
+            const run = vi
+                .fn()
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "NO_REPO\n", stderr: "" })
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+            const fakeSandbox = {
+                sandboxId: "sbx-eager-1",
+                setTimeout: vi.fn().mockResolvedValue(undefined),
+                commands: { run },
+            };
+            computeMocks.connect.mockResolvedValue(fakeSandbox);
+
+            try {
+                const events: AgentEventPayload[] = [];
+                await agent.run(
+                    { userId, sessionId, repositoryId: repoId, prompt: "hi" },
+                    (e) => events.push(e),
+                );
+
+                expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+                expect(run).toHaveBeenCalledTimes(2);
+                expect(run.mock.calls[0]![0]).toContain("test -d /workspace/.git");
+                expect(run.mock.calls[1]![0]).toContain(
+                    "git clone --branch main https://github.com/test-org/eager-repo.git /workspace",
+                );
+                expect(
+                    events.some(
+                        (e) =>
+                            e.type === "AGENT_STATUS" &&
+                            e.content === "Repository cloned successfully",
+                    ),
+                ).toBe(true);
+
+                const calls = vi.mocked(mockModelFn).mock.calls;
+                const messages = calls[0]![0] as unknown as Array<{
+                    role: string;
+                    content: string;
+                }>;
+                const system = messages.find((m) => m.role === "system");
+                expect(system?.content).toContain("Repository context:");
+                expect(system?.content).toContain("already cloned there");
+            } finally {
+                await db
+                    .delete(schema.sandboxes)
+                    .where(eq(schema.sandboxes.sessionId, sessionId));
+                await db
+                    .delete(schema.agentSessions)
+                    .where(eq(schema.agentSessions.id, sessionId));
+                await db
+                    .delete(schema.repositories)
+                    .where(eq(schema.repositories.id, repoId));
+                await db.delete(schema.users).where(eq(schema.users.id, userId));
+            }
+        });
+
+        it("continues the run when repository preparation fails", async () => {
+            const db = getDb();
+            const userId = `user-eager-fail-${crypto.randomUUID()}`;
+            const sessionId = `session-eager-fail-${crypto.randomUUID()}`;
+            const repoId = `repo-eager-fail-${crypto.randomUUID()}`;
+            await db.insert(schema.users).values({
+                id: userId,
+                email: `${userId}@klinpi.dev`,
+                name: "Eager Fail User",
+            });
+            await db
+                .insert(schema.agentSessions)
+                .values({ id: sessionId, userId, title: "eager fail" });
+            await db.insert(schema.repositories).values({
+                id: repoId,
+                userId,
+                provider: "GITHUB",
+                providerRepoId: `pr-${repoId}`,
+                owner: "test-org",
+                name: "fail-repo",
+                fullName: "test-org/fail-repo",
+                cloneUrl: "https://github.com/test-org/fail-repo.git",
+                defaultBranch: "main",
+            });
+            await db.insert(schema.sandboxes).values({
+                sessionId,
+                providerSandboxId: "sbx-eager-fail",
+                status: "RUNNING",
+                workspacePath: "/workspace",
+                branchName: null,
+                lastActiveAt: new Date(),
+            });
+
+            const run = vi
+                .fn()
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "NO_REPO\n", stderr: "" })
+                .mockRejectedValueOnce(
+                    Object.assign(new Error("exit status 128"), {
+                        stderr: "fatal: repository not found",
+                    }),
+                );
+            const fakeSandbox = {
+                sandboxId: "sbx-eager-fail",
+                setTimeout: vi.fn().mockResolvedValue(undefined),
+                commands: { run },
+            };
+            computeMocks.connect.mockResolvedValue(fakeSandbox);
+
+            try {
+                const events: AgentEventPayload[] = [];
+                await agent.run(
+                    { userId, sessionId, repositoryId: repoId, prompt: "hi" },
+                    (e) => events.push(e),
+                );
+
+                expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+                const failStatus = events.find(
+                    (e) =>
+                        e.type === "AGENT_STATUS" &&
+                        e.content.startsWith("Repository preparation failed:"),
+                );
+                expect(failStatus).toBeDefined();
+                expect(failStatus!.content).toContain("Clone failed: fatal: repository not found");
+
+                const calls = vi.mocked(mockModelFn).mock.calls;
+                const messages = calls[0]![0] as unknown as Array<{
+                    role: string;
+                    content: string;
+                }>;
+                const system = messages.find((m) => m.role === "system");
+                expect(system?.content).toContain("repository preparation failed");
+            } finally {
+                await db
+                    .delete(schema.sandboxes)
+                    .where(eq(schema.sandboxes.sessionId, sessionId));
+                await db
+                    .delete(schema.agentSessions)
+                    .where(eq(schema.agentSessions.id, sessionId));
+                await db
+                    .delete(schema.repositories)
+                    .where(eq(schema.repositories.id, repoId));
+                await db.delete(schema.users).where(eq(schema.users.id, userId));
+            }
         });
     });
 });
