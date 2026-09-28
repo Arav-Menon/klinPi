@@ -399,4 +399,89 @@ describe("runLoop", () => {
         expect(createSandbox).toHaveBeenCalledTimes(1);
         expect(tool.execute).toHaveBeenCalledWith({ input: "x" }, "sbx-1");
     });
+
+    it("should prepare an existing sandbox once for sandbox-dependent tools", async () => {
+        const tool = createMockTool({ requiresSandbox: true });
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [
+                    createMockToolCall("call_1", "test_tool", '{"input":"a"}'),
+                    createMockToolCall("call_2", "test_tool", '{"input":"b"}'),
+                ],
+                finishReason: "tool_calls",
+            },
+            { content: "Done", toolCalls: null, finishReason: "stop" },
+        ]);
+        const createSandbox = vi.fn();
+        const prepareSandbox = vi.fn().mockResolvedValue(undefined);
+
+        await runLoop({
+            messages: BASE_MESSAGES,
+            tools: [tool],
+            onEvent: (e) => events.push(e),
+            modelFn,
+            initialSandboxId: "sbx-existing",
+            createSandbox,
+            prepareSandbox,
+        });
+
+        expect(prepareSandbox).toHaveBeenCalledTimes(1);
+        expect(createSandbox).not.toHaveBeenCalled();
+        expect(tool.execute).toHaveBeenCalledTimes(2);
+        expect(tool.execute).toHaveBeenNthCalledWith(1, { input: "a" }, "sbx-existing");
+        expect(tool.execute).toHaveBeenNthCalledWith(2, { input: "b" }, "sbx-existing");
+    });
+
+    it("should not prepare the sandbox for tools that do not require it", async () => {
+        const tool = createMockTool();
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
+                finishReason: "tool_calls",
+            },
+            { content: "Done", toolCalls: null, finishReason: "stop" },
+        ]);
+        const createSandbox = vi.fn();
+        const prepareSandbox = vi.fn().mockResolvedValue(undefined);
+
+        await runLoop({
+            messages: BASE_MESSAGES,
+            tools: [tool],
+            onEvent: (e) => events.push(e),
+            modelFn,
+            initialSandboxId: "sbx-existing",
+            createSandbox,
+            prepareSandbox,
+        });
+
+        expect(prepareSandbox).not.toHaveBeenCalled();
+        expect(createSandbox).not.toHaveBeenCalled();
+    });
+
+    it("should propagate prepareSandbox failures", async () => {
+        const tool = createMockTool({ requiresSandbox: true });
+        const modelFn = createMockModelFn([
+            {
+                content: null,
+                toolCalls: [createMockToolCall("call_1", "test_tool", '{"input":"x"}')],
+                finishReason: "tool_calls",
+            },
+        ]);
+        const prepareSandbox = vi
+            .fn()
+            .mockRejectedValue(new Error("Clone failed: repository not found"));
+
+        await expect(
+            runLoop({
+                messages: BASE_MESSAGES,
+                tools: [tool],
+                onEvent: (e) => events.push(e),
+                modelFn,
+                initialSandboxId: "sbx-existing",
+                prepareSandbox,
+            }),
+        ).rejects.toThrow("Clone failed: repository not found");
+    });
 });
