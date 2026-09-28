@@ -89,15 +89,26 @@ export async function updateSession(req: AuthenticatedRequest, res: Response) {
     }
 
     const sessionId = req.params.sessionId as string;
-    const { title, status } = req.body;
+    const { title, status, repositoryId } = req.body;
 
     const session = await sessionService.updateSession(userId, sessionId, {
       title,
       status,
+      repositoryId,
     });
 
     if (!session) {
       res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    if (session === "REPOSITORY_LOCKED") {
+      res.status(409).json({ error: "A repository is already linked to this session" });
+      return;
+    }
+
+    if (session === "REPOSITORY_INVALID") {
+      res.status(400).json({ error: "Repository not found" });
       return;
     }
 
