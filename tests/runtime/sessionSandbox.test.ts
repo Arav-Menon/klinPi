@@ -84,6 +84,9 @@ describe("SessionSandboxService", () => {
         await db
             .delete(schema.sandboxes)
             .where(eq(schema.sandboxes.sessionId, TEST_SESSION_ID));
+        await db
+            .delete(schema.oauthAccounts)
+            .where(eq(schema.oauthAccounts.userId, TEST_USER_ID));
     });
 
     describe("refresh", () => {
@@ -131,17 +134,22 @@ describe("SessionSandboxService", () => {
     });
 
     describe("ensure", () => {
-        it("should reuse an existing sandbox without creating or cloning", async () => {
+        it("should reuse an existing sandbox whose workspace already has the repository", async () => {
             const row = await insertSandboxRow("sbx-live-2", "RUNNING");
+            const run = vi
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: "HAS_REPO\n", stderr: "" });
             const fakeSandbox = {
                 sandboxId: "sbx-live-2",
                 setTimeout: vi.fn().mockResolvedValue(undefined),
+                commands: { run },
             };
             computeMocks.connect.mockResolvedValue(fakeSandbox);
 
             const statuses: string[] = [];
             const result = await sessionSandboxService.ensure({
                 sessionId: TEST_SESSION_ID,
+                userId: TEST_USER_ID,
                 cloneUrl: CLONE_URL,
                 branch: "main",
                 onStatus: (content) => statuses.push(content),
@@ -150,8 +158,52 @@ describe("SessionSandboxService", () => {
             expect(result).toBe("sbx-live-2");
             expect(computeMocks.create).not.toHaveBeenCalled();
             expect(statuses.some((s) => s.startsWith("Reusing sandbox"))).toBe(true);
+            expect(run).toHaveBeenCalledTimes(1);
+            expect(run.mock.calls[0][0]).toContain("test -d /workspace/.git");
+            expect(run.mock.calls[0][0]).not.toContain("git clone");
 
             const updated = await getSandboxRow(row.id);
+            expect(updated.status).toBe("RUNNING");
+        });
+
+        it("should clone into a reused sandbox when the repository is missing", async () => {
+            const row = await insertSandboxRow("sbx-live-3", "RUNNING");
+            await getDb()
+                .update(schema.sandboxes)
+                .set({ branchName: null })
+                .where(eq(schema.sandboxes.id, row.id));
+            const run = vi
+                .fn()
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "NO_REPO\n", stderr: "" })
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+            const fakeSandbox = {
+                sandboxId: "sbx-live-3",
+                setTimeout: vi.fn().mockResolvedValue(undefined),
+                commands: { run },
+            };
+            computeMocks.connect.mockResolvedValue(fakeSandbox);
+
+            const statuses: string[] = [];
+            const result = await sessionSandboxService.ensure({
+                sessionId: TEST_SESSION_ID,
+                userId: TEST_USER_ID,
+                cloneUrl: CLONE_URL,
+                branch: "main",
+                onStatus: (content) => statuses.push(content),
+            });
+
+            expect(result).toBe("sbx-live-3");
+            expect(computeMocks.create).not.toHaveBeenCalled();
+            expect(run).toHaveBeenCalledTimes(2);
+            expect(run.mock.calls[0][0]).toContain("test -d /workspace/.git");
+            expect(run.mock.calls[1][0]).toContain(
+                `git clone --branch main ${CLONE_URL} /workspace`,
+            );
+            expect(statuses).toContain(`Cloning ${CLONE_URL} (branch: main)...`);
+            expect(statuses).toContain("Repository cloned successfully");
+
+            const updated = await getSandboxRow(row.id);
+            expect(updated.branchName).toBe("main");
             expect(updated.status).toBe("RUNNING");
         });
 
@@ -263,6 +315,157 @@ describe("SessionSandboxService", () => {
                 .from(schema.sandboxes)
                 .where(eq(schema.sandboxes.providerSandboxId, sandboxId));
             expect(rows[0].status).toBe("FAILED");
+        });
+    });
+
+    describe("prepareRepository", () => {
+        it("should skip cloning when the repository is already present", async () => {
+            const run = vi
+                .fn()
+                .mockResolvedValue({ exitCode: 0, stdout: "HAS_REPO\n", stderr: "" });
+            const fakeSandbox = { sandboxId: "sbx-prep-1", commands: { run } };
+            computeMocks.connect.mockResolvedValue(fakeSandbox);
+
+            const statuses: string[] = [];
+            await sessionSandboxService.prepareRepository({
+                sessionId: TEST_SESSION_ID,
+                sandboxId: "sbx-prep-1",
+                userId: TEST_USER_ID,
+                repositoryId: "repo-prep-000",
+                cloneUrl: CLONE_URL,
+                branch: "main",
+                onStatus: (content) => statuses.push(content),
+            });
+
+            expect(computeMocks.connect).toHaveBeenCalledWith("sbx-prep-1");
+            expect(run).toHaveBeenCalledTimes(1);
+            expect(run.mock.calls[0][0]).toContain("test -d /workspace/.git");
+            expect(statuses).toHaveLength(0);
+        });
+
+        it("should clone when the workspace has no repository", async () => {
+            const row = await insertSandboxRow("sbx-prep-2", "RUNNING");
+            await getDb()
+                .update(schema.sandboxes)
+                .set({ branchName: null })
+                .where(eq(schema.sandboxes.id, row.id));
+            const run = vi
+                .fn()
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "NO_REPO\n", stderr: "" })
+                .mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+            const fakeSandbox = { sandboxId: "sbx-prep-2", commands: { run } };
+            computeMocks.connect.mockResolvedValue(fakeSandbox);
+
+            const statuses: string[] = [];
+            await sessionSandboxService.prepareRepository({
+                sessionId: TEST_SESSION_ID,
+                sandboxId: "sbx-prep-2",
+                userId: TEST_USER_ID,
+                repositoryId: "repo-prep-001",
+                cloneUrl: CLONE_URL,
+                branch: "develop",
+                onStatus: (content) => statuses.push(content),
+            });
+
+            expect(run).toHaveBeenCalledTimes(2);
+            expect(run.mock.calls[1][0]).toContain(
+                `git clone --branch develop ${CLONE_URL} /workspace`,
+            );
+            expect(statuses).toContain("Repository cloned successfully");
+
+            const updated = await getSandboxRow(row.id);
+            expect(updated.branchName).toBe("develop");
+            expect(updated.status).toBe("RUNNING");
+        });
+
+        it("should fail clearly when the sandbox cannot be connected", async () => {
+            computeMocks.connect.mockRejectedValue(new Error("sandbox gone"));
+            await expect(
+                sessionSandboxService.prepareRepository({
+                    sessionId: TEST_SESSION_ID,
+                    sandboxId: "sbx-prep-dead",
+                    cloneUrl: CLONE_URL,
+                    branch: "main",
+                    onStatus: () => {},
+                }),
+            ).rejects.toThrow("Sandbox sbx-prep-dead is unavailable (sandbox gone)");
+        });
+    });
+
+    describe("authenticated clone credentials", () => {
+        const TOKEN = "gho_SuperSecretToken123abcDEF";
+
+        beforeEach(async () => {
+            await getDb()
+                .insert(schema.oauthAccounts)
+                .values({
+                    userId: TEST_USER_ID,
+                    provider: "github",
+                    providerAccountId: "sbx-acct-000",
+                    accessToken: TOKEN,
+                })
+                .onConflictDoNothing();
+        });
+
+        it("should inject the stored GitHub token into the clone command", async () => {
+            const sandboxId = `sbx-auth-${crypto.randomUUID()}`;
+            const run = vi.fn().mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+            const fakeSandbox = {
+                sandboxId,
+                commands: { run },
+                kill: vi.fn(),
+                setTimeout: vi.fn(),
+            };
+            computeMocks.create.mockResolvedValue({ sandbox: fakeSandbox, sandboxId });
+
+            await sessionSandboxService.ensure({
+                sessionId: TEST_SESSION_ID,
+                userId: TEST_USER_ID,
+                cloneUrl: CLONE_URL,
+                branch: "main",
+                onStatus: () => {},
+            });
+
+            const command = run.mock.calls[0][0] as string;
+            expect(command).toContain(
+                `x-access-token:${TOKEN}@github.com/example/example.git`,
+            );
+            expect(command).toContain("git clone --branch main");
+        });
+
+        it("should sanitize the token when the clone fails", async () => {
+            const sandboxId = `sbx-auth-fail-${crypto.randomUUID()}`;
+            const run = vi.fn().mockResolvedValue({
+                exitCode: 128,
+                stdout: "",
+                stderr: `fatal: could not read Username for 'https://x-access-token:${TOKEN}@github.com': terminal prompts disabled`,
+            });
+            const fakeSandbox = {
+                sandboxId,
+                commands: { run },
+                kill: vi.fn(),
+                setTimeout: vi.fn(),
+            };
+            computeMocks.create.mockResolvedValue({ sandbox: fakeSandbox, sandboxId });
+
+            let caught: unknown;
+            try {
+                await sessionSandboxService.ensure({
+                    sessionId: TEST_SESSION_ID,
+                    userId: TEST_USER_ID,
+                    cloneUrl: CLONE_URL,
+                    branch: "main",
+                    onStatus: () => {},
+                });
+            } catch (error) {
+                caught = error;
+            }
+
+            expect(caught).toBeInstanceOf(Error);
+            const message = (caught as Error).message;
+            expect(message).toContain("Clone failed:");
+            expect(message).not.toContain(TOKEN);
+            expect(message).toContain("x-access-token:***@github.com");
         });
     });
 });
