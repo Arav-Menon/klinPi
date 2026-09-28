@@ -15,6 +15,7 @@ export interface LoopInput {
     modelFn: ModelFn;
     initialSandboxId?: string;
     createSandbox?: () => Promise<string>;
+    prepareSandbox?: () => Promise<void>;
 }
 
 function convertToolsToOpenRouter(
@@ -43,6 +44,7 @@ export async function runLoop(input: LoopInput): Promise<void> {
     const openRouterTools = convertToolsToOpenRouter(tools);
     const conversation: LoopMessage[] = [...messages];
     let sandboxId: string | undefined = input.initialSandboxId;
+    let sandboxPrepared = false;
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
         const response = await modelFn(conversation, openRouterTools);
@@ -98,10 +100,16 @@ export async function runLoop(input: LoopInput): Promise<void> {
                 continue;
             }
 
-            if (!sandboxId && input.createSandbox && tool.requiresSandbox) {
-                onEvent({ type: "AGENT_STATUS", content: "Creating sandbox..." });
-                sandboxId = await input.createSandbox();
-                onEvent({ type: "AGENT_STATUS", content: `Sandbox ready: ${sandboxId}` });
+            if (tool.requiresSandbox) {
+                if (!sandboxId && input.createSandbox) {
+                    onEvent({ type: "AGENT_STATUS", content: "Creating sandbox..." });
+                    sandboxId = await input.createSandbox();
+                    sandboxPrepared = true;
+                    onEvent({ type: "AGENT_STATUS", content: `Sandbox ready: ${sandboxId}` });
+                } else if (sandboxId && input.prepareSandbox && !sandboxPrepared) {
+                    await input.prepareSandbox();
+                    sandboxPrepared = true;
+                }
             }
 
             let args: Record<string, any>;

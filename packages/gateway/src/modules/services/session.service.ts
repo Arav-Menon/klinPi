@@ -141,21 +141,42 @@ export async function getSession(
   return session as SessionResponse;
 }
 
+export type UpdateSessionResult =
+  | SessionResponse
+  | "REPOSITORY_LOCKED"
+  | "REPOSITORY_INVALID"
+  | null;
+
 export async function updateSession(
   userId: string,
   sessionId: string,
-  data: { title?: string; status?: SessionStatus },
-): Promise<SessionResponse | null> {
+  data: { title?: string; status?: SessionStatus; repositoryId?: string },
+): Promise<UpdateSessionResult> {
   const database = db();
 
   const [existing] = await database
-    .select({ userId: agentSessions.userId })
+    .select({ userId: agentSessions.userId, repositoryId: agentSessions.repositoryId })
     .from(agentSessions)
     .where(eq(agentSessions.id, sessionId))
     .limit(1);
 
   if (!existing || existing.userId !== userId) {
     return null;
+  }
+
+  // One repository per session: once bound, it can never be changed.
+  if (data.repositoryId !== undefined) {
+    if (existing.repositoryId) {
+      return "REPOSITORY_LOCKED";
+    }
+    const [repo] = await database
+      .select({ id: repositories.id })
+      .from(repositories)
+      .where(and(eq(repositories.id, data.repositoryId), eq(repositories.userId, userId)))
+      .limit(1);
+    if (!repo) {
+      return "REPOSITORY_INVALID";
+    }
   }
 
   const [session] = await database

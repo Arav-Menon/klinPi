@@ -3,7 +3,6 @@
 import { Plus } from "lucide-react";
 
 import { Logo } from "@/app/components/landing/logo";
-import { SidebarRepositories } from "@/app/components/console/sidebar-repositories";
 import { SidebarSessions } from "@/app/components/console/sidebar-sessions";
 import { SidebarUser } from "@/app/components/console/sidebar-user";
 import { useGoToConsole } from "@/app/components/console/workspace-context";
@@ -12,8 +11,9 @@ import { Button } from "@/app/components/ui/button";
 /**
  * Console sidebar content — shared by the desktop rail and the mobile
  * Sheet. Information architecture: identity → new session → sessions →
- * repositories → user. No V1-unnecessary destinations (automations,
- * security, review, wiki, customize) — only what the backend supports.
+ * user. Repository selection lives in the composer (`+` / "@"), not here.
+ * No V1-unnecessary destinations (automations, security, review, wiki,
+ * customize) — only what the backend supports.
  *
  * "New session" navigates to the console workspace; sessions are created
  * by submitting the first prompt (never as empty API calls).
@@ -39,7 +39,6 @@ export function ConsoleSidebarContent() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         <SidebarSessions />
-        <SidebarRepositories />
       </div>
 
       <SidebarUser />

@@ -14,8 +14,13 @@ export const createSessionSchema = z.object({
 export const updateSessionSchema = z.object({
   title: z.string().min(1, "Title cannot be empty").max(200).optional(),
   status: z.enum(["ACTIVE", "PAUSED", "COMPLETED", "FAILED", "ARCHIVED"]).optional(),
+  /**
+   * Bind a repository to a session that has none. A session's repository
+   * is set once and immutable afterwards (enforced server-side).
+   */
+  repositoryId: z.string().optional(),
 }).refine(
-  (data) => data.title !== undefined || data.status !== undefined,
+  (data) => data.title !== undefined || data.status !== undefined || data.repositoryId !== undefined,
   { message: "At least one field must be provided" },
 );
 

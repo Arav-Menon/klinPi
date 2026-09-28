@@ -9,9 +9,22 @@ type StatusCallback = (content: string) => void;
 
 export interface EnsureSandboxParams {
     sessionId: string;
+    userId?: string | undefined;
+    repositoryId?: string | undefined;
     /** When present the workspace is cloned from this repo; otherwise an empty workspace is prepared. */
-    cloneUrl?: string;
-    branch?: string;
+    cloneUrl?: string | undefined;
+    branch?: string | undefined;
+    onStatus: StatusCallback;
+}
+
+export interface PrepareRepositoryParams {
+    sessionId: string;
+    /** Provider sandbox id (as stored in Sandbox.providerSandboxId). */
+    sandboxId: string;
+    userId?: string | undefined;
+    repositoryId?: string | undefined;
+    cloneUrl: string;
+    branch?: string | undefined;
     onStatus: StatusCallback;
 }
 
@@ -69,17 +82,31 @@ export class SessionSandboxService {
     }
 
     async ensure(params: EnsureSandboxParams): Promise<string> {
-        const { sessionId, cloneUrl, branch, onStatus } = params;
+        const { sessionId, userId, repositoryId, cloneUrl, branch, onStatus } = params;
         const effectiveBranch = branch ?? "main";
 
         const reusedId = await this.refresh(sessionId);
         if (reusedId) {
             onStatus(`Reusing sandbox ${reusedId} — workspace preserved`);
+            if (cloneUrl) {
+                await this.prepareRepository({
+                    sessionId,
+                    sandboxId: reusedId,
+                    userId,
+                    repositoryId,
+                    cloneUrl,
+                    branch,
+                    onStatus,
+                });
+            }
             return reusedId;
         }
 
         const { sandbox, sandboxId } = await createSandbox();
         sandboxManger.registerSbx(sandbox);
+        console.log(
+            `[SessionSandbox] action=create sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repositoryId=${repositoryId ?? "none"} repo=${cloneUrl ?? "none"} branch=${cloneUrl ? effectiveBranch : "-"}`,
+        );
 
         let rowId: string;
         try {
@@ -108,30 +135,16 @@ export class SessionSandboxService {
             throw error;
         }
 
-        onStatus(
-            cloneUrl
-                ? `Cloning ${cloneUrl} (branch: ${effectiveBranch})...`
-                : "Preparing workspace (no repository linked)...",
-        );
-        const prepareCommand = cloneUrl
-            ? `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH} && git clone --branch ${effectiveBranch} ${cloneUrl} ${WORKSPACE_PATH}`
-            : `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH}`;
         try {
-            const result = await sandbox.commands.run(prepareCommand);
-            if (result.exitCode !== 0) {
-                throw new Error(result.stderr || `exit status ${result.exitCode}`);
-            }
+            await this.runPrepare(sandbox, {
+                sessionId,
+                sandboxId,
+                userId,
+                cloneUrl,
+                branch,
+                onStatus,
+            });
         } catch (error) {
-            const stderr = (error as { stderr?: string }).stderr;
-            const raw =
-                (typeof stderr === "string" && stderr.trim()) ||
-                (error instanceof Error ? error.message : String(error));
-            const detail = cloneUrl
-                ? raw.startsWith("Clone failed")
-                    ? raw
-                    : `Clone failed: ${raw}`
-                : raw;
-            console.error(`[Sandbox prepare] ${detail}`);
             try {
                 await this.db
                     .update(schema.sandboxes)
@@ -140,7 +153,7 @@ export class SessionSandboxService {
             } catch (dbError) {
                 console.error("[SessionSandbox] Failed to mark sandbox FAILED:", dbError);
             }
-            throw new Error(detail);
+            throw error;
         }
 
         try {
@@ -152,8 +165,178 @@ export class SessionSandboxService {
             console.error("[SessionSandbox] Failed to mark sandbox RUNNING:", error);
         }
 
-        onStatus(cloneUrl ? "Repository cloned successfully" : "Workspace ready");
         return sandboxId;
+    }
+
+    async prepareRepository(params: PrepareRepositoryParams): Promise<void> {
+        const { sessionId, sandboxId, userId, repositoryId, cloneUrl, branch, onStatus } = params;
+        const effectiveBranch = branch ?? "main";
+
+        let sandbox: Sandbox;
+        try {
+            sandbox = await Sandbox.connect(sandboxId);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Sandbox ${sandboxId} is unavailable (${message})`);
+        }
+
+        let checkOutput = "";
+        try {
+            const check = await sandbox.commands.run(
+                `test -d ${WORKSPACE_PATH}/.git && echo HAS_REPO || echo NO_REPO`,
+            );
+            checkOutput = String(check.stdout ?? "");
+        } catch {
+            checkOutput = "";
+        }
+
+        if (checkOutput.includes("HAS_REPO")) {
+            console.log(
+                `[SessionSandbox] action=prepare-reuse sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repositoryId=${repositoryId ?? "none"} repo=${cloneUrl} branch=${effectiveBranch} — repository already present`,
+            );
+            return;
+        }
+
+        console.log(
+            `[SessionSandbox] action=prepare-reuse sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repositoryId=${repositoryId ?? "none"} repo=${cloneUrl} branch=${effectiveBranch} — repository missing, cloning`,
+        );
+        await this.runPrepare(sandbox, {
+            sessionId,
+            sandboxId,
+            userId,
+            cloneUrl,
+            branch,
+            onStatus,
+        });
+
+        try {
+            await this.db
+                .update(schema.sandboxes)
+                .set({
+                    branchName: effectiveBranch,
+                    status: "RUNNING",
+                    lastActiveAt: new Date(),
+                })
+                .where(
+                    and(
+                        eq(schema.sandboxes.sessionId, sessionId),
+                        eq(schema.sandboxes.providerSandboxId, sandboxId),
+                    ),
+                );
+        } catch (error) {
+            console.warn(
+                "[SessionSandbox] Failed to update sandbox row after repository prepare:",
+                error instanceof Error ? error.message : error,
+            );
+        }
+    }
+
+    private async runPrepare(
+        sandbox: Sandbox,
+        params: {
+            sessionId: string;
+            sandboxId: string;
+            userId?: string | undefined;
+            cloneUrl?: string | undefined;
+            branch?: string | undefined;
+            onStatus: StatusCallback;
+        },
+    ): Promise<void> {
+        const { sessionId, sandboxId, userId, cloneUrl, branch, onStatus } = params;
+        const effectiveBranch = branch ?? "main";
+        onStatus(
+            cloneUrl
+                ? `Cloning ${cloneUrl} (branch: ${effectiveBranch})...`
+                : "Preparing workspace (no repository linked)...",
+        );
+
+        const { command, secret } = await this.buildPrepareCommand(
+            cloneUrl,
+            effectiveBranch,
+            userId,
+        );
+        try {
+            const result = await sandbox.commands.run(command);
+            if (result.exitCode !== 0) {
+                throw new Error(result.stderr || `exit status ${result.exitCode}`);
+            }
+        } catch (error) {
+            const stderr = (error as { stderr?: string }).stderr;
+            const raw =
+                (typeof stderr === "string" && stderr.trim()) ||
+                (error instanceof Error ? error.message : String(error));
+            const safe = this.sanitize(raw, secret);
+            const detail = cloneUrl
+                ? safe.startsWith("Clone failed")
+                    ? safe
+                    : `Clone failed: ${safe}`
+                : safe;
+            console.error(
+                `[SessionSandbox] action=prepare-failed sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repo=${cloneUrl ?? "none"} error=${detail}`,
+            );
+            throw new Error(detail);
+        }
+
+        console.log(
+            `[SessionSandbox] action=prepare-ok sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repo=${cloneUrl ?? "none"} branch=${cloneUrl ? effectiveBranch : "-"}`,
+        );
+        onStatus(cloneUrl ? "Repository cloned successfully" : "Workspace ready");
+    }
+
+    private async buildPrepareCommand(
+        cloneUrl: string | undefined,
+        effectiveBranch: string,
+        userId?: string | undefined,
+    ): Promise<{ command: string; secret?: string | undefined }> {
+        if (!cloneUrl) {
+            return {
+                command: `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH}`,
+            };
+        }
+
+        let url = cloneUrl;
+        let secret: string | undefined;
+        if (/^https:\/\/github\.com\/.+/.test(cloneUrl) && userId) {
+            try {
+                const rows = await this.db
+                    .select({ accessToken: schema.oauthAccounts.accessToken })
+                    .from(schema.oauthAccounts)
+                    .where(
+                        and(
+                            eq(schema.oauthAccounts.userId, userId),
+                            eq(schema.oauthAccounts.provider, "github"),
+                        ),
+                    )
+                    .limit(1);
+                const token = rows[0]?.accessToken;
+                if (token) {
+                    secret = token;
+                    url = `https://x-access-token:${encodeURIComponent(token)}@${cloneUrl.slice("https://".length)}`;
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                console.warn(
+                    `[SessionSandbox] GitHub credential lookup failed, cloning without auth: ${this.sanitize(message, secret)}`,
+                );
+            }
+        }
+
+        return {
+            command: `sudo mkdir -p ${WORKSPACE_PATH} && sudo chown -R user ${WORKSPACE_PATH} && git clone --branch ${effectiveBranch} ${url} ${WORKSPACE_PATH}`,
+            secret,
+        };
+    }
+
+    private sanitize(text: string, secret?: string | undefined): string {
+        let out = text.replace(/x-access-token:[^@\s]*@/g, "x-access-token:***@");
+        if (secret) {
+            out = out.split(secret).join("***");
+            const encoded = encodeURIComponent(secret);
+            if (encoded !== secret) {
+                out = out.split(encoded).join("***");
+            }
+        }
+        return out;
     }
 
     private async findRunning(sessionId: string) {

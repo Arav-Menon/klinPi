@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { FolderGit2 } from "lucide-react";
 
 import { useWorkspace } from "@/app/components/console/workspace-context";
@@ -34,9 +35,16 @@ const CONNECTION: Record<SocketStatus, { label: string; dot: string }> = {
  * Workspace header: current session identity + repository context.
  * Shows only real data from the workspace context (active session /
  * selected GitHub repository) — no placeholder repo names. The optional
- * `connection` slot surfaces the session WebSocket state.
+ * `connection` slot surfaces the session WebSocket state; `toolsSlot`
+ * renders trailing header actions (e.g. the workspace "+" menu).
  */
-export function SessionHeader({ connection }: { connection?: SocketStatus }) {
+export function SessionHeader({
+  connection,
+  toolsSlot,
+}: {
+  connection?: SocketStatus;
+  toolsSlot?: ReactNode;
+}) {
   const { activeSession, selectedRepo, repos } = useWorkspace();
 
   const title = activeSession
@@ -103,6 +111,8 @@ export function SessionHeader({ connection }: { connection?: SocketStatus }) {
             No repository selected
           </span>
         )}
+
+        {toolsSlot}
       </div>
     </header>
   );
