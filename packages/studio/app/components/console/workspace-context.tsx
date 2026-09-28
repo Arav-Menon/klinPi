@@ -15,6 +15,7 @@ import {
   consolePath,
   listGithubRepos,
   listRecentSessions,
+  patchSession,
   type GithubRepo,
   type Session,
 } from "@/lib/api";
@@ -35,6 +36,8 @@ interface WorkspaceContextValue {
   /**
    * Session backing the current route (`/session/[sessionId]`), loaded by
    * the session guard — or null on the console (new-session workspace).
+   * A repository bound during this route is merged in so the composer,
+   * header and socket all see the lock immediately.
    */
   activeSession: Session | null;
 
@@ -46,7 +49,18 @@ interface WorkspaceContextValue {
 
   /** Locally selected repository context for the workspace header. */
   selectedRepo: GithubRepo | null;
-  selectRepo: (repo: GithubRepo | null) => void;
+
+  /**
+   * Bind a repository to the current workspace.
+   * Console (no active session): stores the pending selection that the
+   * first prompt persists with `createSession`.
+   * Session route: PATCHes `repositoryId` (gateway enforces one repo per
+   * session) and locks the workspace. Rejects when the repo has no DB id.
+   */
+  bindRepository: (repo: GithubRepo) => Promise<void>;
+
+  /** Drop the pending console selection (sessions are never unbound). */
+  clearRepository: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -61,7 +75,7 @@ function errorMessage(err: unknown, fallback: string) {
 
 export function WorkspaceProvider({
   user,
-  activeSession = null,
+  activeSession: sessionProp = null,
   children,
 }: {
   user: CurrentUser;
@@ -80,6 +94,28 @@ export function WorkspaceProvider({
 
   const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
 
+  /**
+   * Repository bound on this session route (set only in handlers). The
+   * stored id is scoped to its session id, so switching sessions can
+   * never leak a stale lock; once the guard's session already carries a
+   * repository the override is ignored (server is the source of truth).
+   */
+  const [sessionBind, setSessionBind] = useState<{ sessionId: string; repositoryId: string } | null>(
+    null,
+  );
+
+  const activeSession = useMemo(() => {
+    if (!sessionProp) return null;
+    if (
+      sessionBind &&
+      sessionBind.sessionId === sessionProp.id &&
+      sessionProp.repositoryId === null
+    ) {
+      return {...sessionProp, repositoryId: sessionBind.repositoryId};
+    }
+    return sessionProp;
+  }, [sessionProp, sessionBind]);
+
   const reloadSessions = useCallback(() => {
     setSessionsStatus("loading");
     setSessionsVersion((v) => v + 1);
@@ -88,7 +124,26 @@ export function WorkspaceProvider({
     setReposStatus("loading");
     setReposVersion((v) => v + 1);
   }, []);
-  const selectRepo = useCallback((repo: GithubRepo | null) => setSelectedRepo(repo), []);
+
+  const bindRepository = useCallback(
+    async (repo: GithubRepo) => {
+      if (!repo.repositoryId) {
+        throw new Error("That repository isn't linked yet — reconnect GitHub and try again.");
+      }
+      if (sessionProp) {
+        const updated = await patchSession(sessionProp.id, { repositoryId: repo.repositoryId });
+        setSessionBind({
+          sessionId: sessionProp.id,
+          repositoryId: updated.repositoryId ?? repo.repositoryId,
+        });
+      } else {
+        setSelectedRepo(repo);
+      }
+    },
+    [sessionProp],
+  );
+
+  const clearRepository = useCallback(() => setSelectedRepo(null), []);
 
   useEffect(() => {
     let active = true;
@@ -151,7 +206,8 @@ export function WorkspaceProvider({
       reposError,
       reloadRepos,
       selectedRepo,
-      selectRepo,
+      bindRepository,
+      clearRepository,
     }),
     [
       user,
@@ -165,7 +221,8 @@ export function WorkspaceProvider({
       reposError,
       reloadRepos,
       selectedRepo,
-      selectRepo,
+      bindRepository,
+      clearRepository,
     ],
   );
 
