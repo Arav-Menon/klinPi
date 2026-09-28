@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import app from "../../packages/gateway/src/app";
 import { db } from "../../packages/gateway/src/lib/db";
-import { messages, users } from "@klinpi/db/schema";
+import { messages, repositories, users } from "@klinpi/db/schema";
 import { inArray } from "drizzle-orm";
 
 const EMAILS = ["session-owner@test.com", "session-other@test.com"];
@@ -84,6 +84,104 @@ describe("Session API", () => {
 
     it("requires authentication", async () => {
       const res = await request(app).post("/api/v1/sessions").send({ prompt: "hello" });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("PATCH /api/v1/sessions/:sessionId", () => {
+    async function insertRepo(userId: string) {
+      const providerRepoId = `patch-test-${crypto.randomUUID()}`;
+      const [repo] = await db()
+        .insert(repositories)
+        .values({
+          userId,
+          provider: "GITHUB",
+          providerRepoId,
+          owner: "patch-test-owner",
+          name: "patch-test",
+          fullName: "patch-test-owner/patch-test",
+          cloneUrl: `https://github.com/patch-test-owner/patch-test-${providerRepoId}.git`,
+          defaultBranch: "main",
+        })
+        .returning();
+      return repo!;
+    }
+
+    it("binds a repository exactly once and rejects a second binding", async () => {
+      const created = await owner.post("/api/v1/sessions").send({ prompt: "patch bind probe" });
+      expect(created.status).toBe(201);
+      const sessionId = created.body.session.id;
+
+      const ownerRow = await db()
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.email, [EMAILS[0]!]))
+        .then((rows) => rows[0]);
+      const repo = await insertRepo(ownerRow!.id);
+      const otherRepo = await insertRepo(ownerRow!.id);
+
+      const first = await owner
+        .patch(`/api/v1/sessions/${sessionId}`)
+        .send({ repositoryId: repo.id });
+      expect(first.status).toBe(200);
+      expect(first.body.session.repositoryId).toBe(repo.id);
+
+      const second = await owner
+        .patch(`/api/v1/sessions/${sessionId}`)
+        .send({ repositoryId: otherRepo.id });
+      expect(second.status).toBe(409);
+      expect(second.body).toEqual({ error: "A repository is already linked to this session" });
+
+      const fetched = await owner.get(`/api/v1/sessions/${sessionId}`);
+      expect(fetched.body.session.repositoryId).toBe(repo.id);
+    });
+
+    it("rejects a repository the user does not own", async () => {
+      const created = await owner.post("/api/v1/sessions").send({ prompt: "patch foreign probe" });
+      expect(created.status).toBe(201);
+
+      const otherRow = await db()
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.email, [EMAILS[1]!]))
+        .then((rows) => rows[0]);
+      const foreignRepo = await insertRepo(otherRow!.id);
+
+      const res = await owner
+        .patch(`/api/v1/sessions/${created.body.session.id}`)
+        .send({ repositoryId: foreignRepo.id });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: "Repository not found" });
+    });
+
+    it("returns 404 when patching another user's session", async () => {
+      const created = await owner.post("/api/v1/sessions").send({ prompt: "patch ownership probe" });
+      expect(created.status).toBe(201);
+
+      const res = await other
+        .patch(`/api/v1/sessions/${created.body.session.id}`)
+        .send({ title: "stolen" });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("still supports title updates", async () => {
+      const created = await owner.post("/api/v1/sessions").send({ prompt: "patch title probe" });
+      expect(created.status).toBe(201);
+
+      const res = await owner
+        .patch(`/api/v1/sessions/${created.body.session.id}`)
+        .send({ title: "Renamed by patch" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.session.title).toBe("Renamed by patch");
+    });
+
+    it("requires authentication", async () => {
+      const res = await request(app)
+        .patch("/api/v1/sessions/00000000-0000-0000-0000-000000000000")
+        .send({ title: "nope" });
       expect(res.status).toBe(401);
     });
   });
