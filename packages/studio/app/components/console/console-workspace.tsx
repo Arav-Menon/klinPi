@@ -21,7 +21,7 @@ import { setPendingRun } from "@/app/lib/ws";
  */
 export function ConsoleWorkspace() {
   const router = useRouter();
-  const { selectedRepo } = useWorkspace();
+  const { selectedRepo, bindRepository, clearRepository } = useWorkspace();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function handleSubmit(prompt: string): Promise<boolean> {
@@ -29,9 +29,9 @@ export function ConsoleWorkspace() {
     try {
       const session = await createSession({
         prompt,
-        // Link the repository the user picked in the sidebar so the runtime
-        // can clone it into the sandbox. Only DB row ids are linkable; a
-        // repo that hasn't synced yet simply starts unlinked.
+        // Link the repository picked in the composer so the runtime can
+        // clone it into the sandbox. Only DB row ids are linkable; a repo
+        // that hasn't synced yet simply starts unlinked.
         ...(selectedRepo?.repositoryId
           ? { repositoryId: selectedRepo.repositoryId }
           : {}),
@@ -53,11 +53,11 @@ export function ConsoleWorkspace() {
         onSubmit={handleSubmit}
         statusText={submitError ?? undefined}
         statusTone={submitError ? "danger" : undefined}
-        placeholder={
-          selectedRepo
-            ? `Give Klinpi a task for ${selectedRepo.full_name}…`
-            : "Give Klinpi a task…"
-        }
+        repo={selectedRepo}
+        repoLocked={false}
+        onSelectRepo={bindRepository}
+        onClearRepo={clearRepository}
+        placeholder="Give Klinpi a task…"
       />
     </>
   );
