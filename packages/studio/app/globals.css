@@ -134,22 +134,27 @@
 }
 
 /*
- * Product mock-ups (agent workspace, repository picker, event stream) keep a
- * dark developer-tool surface so they stay legible on the white page.
- * Every semantic token is re-mapped here, so no markup change is required.
+ * Product surfaces (console, agent workspace mock-ups, event stream).
+ * Layered dark hierarchy per the Devin reference: main background
+ * #141414 — NOT pitch-black — with slightly lifted panels, inputs and
+ * popovers. Every semantic token is re-mapped here, so no markup change
+ * is required. Light product surfaces keep the untouched tokens above.
  */
 .dark-scope {
   color-scheme: dark;
   color: var(--foreground);
 
-  --background: #0a0a0b;
+  /* Main app background */
+  --background: #141414;
   --foreground: #fafafa;
-  --card: #0a0a0b;
+  /* Cards / panels sit one step above the background */
+  --card: #1a1a1a;
   --card-foreground: #fafafa;
-  --popover: #0a0a0b;
+  /* Popovers / menus float above panels */
+  --popover: #1c1c1c;
   --popover-foreground: #fafafa;
   --primary: #fafafa;
-  --primary-foreground: #0a0a0b;
+  --primary-foreground: #141414;
   --secondary: rgba(255, 255, 255, 0.06);
   --secondary-foreground: #fafafa;
   --muted: rgba(255, 255, 255, 0.05);
@@ -157,11 +162,13 @@
   --accent: rgba(255, 255, 255, 0.06);
   --accent-foreground: #fafafa;
   --destructive: #f87171;
+  /* Subtle hairline borders */
   --border: rgba(255, 255, 255, 0.09);
   --input: rgba(255, 255, 255, 0.12);
   --ring: rgba(255, 255, 255, 0.55);
-  --surface: #0a0a0b;
-  --surface-raised: #101012;
+  /* Sidebar rail / composer input surface — lifted from the background */
+  --surface: #171717;
+  --surface-raised: #1a1a1a;
   --subtle: #a1a1a1;
   --faint: #7a7a7a;
   --success: #34d399;
