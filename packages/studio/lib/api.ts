@@ -197,6 +197,22 @@ export async function getSession(sessionId: string): Promise<Session> {
   return data.session;
 }
 
+/**
+ * Patch a session. Used to bind a repository to a session that has none
+ * (`{ repositoryId }`) or rename it. The gateway enforces one-repository-
+ * per-session: a second binding responds with 409.
+ */
+export async function patchSession(
+  sessionId: string,
+  body: { title?: string; status?: SessionStatus; repositoryId?: string },
+): Promise<Session> {
+  const data = (await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })) as { session: Session };
+  return data.session;
+}
+
 /** Persisted message history for a session, oldest first. */
 export async function getSessionMessages(
   sessionId: string,
