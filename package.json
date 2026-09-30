@@ -7,7 +7,8 @@
   "author": "Arav-menon",
   "license": "MIT",
   "scripts": {
-    "build": "pnpm --filter \"!@klinpi/studio\" -r build",
+    "build:all": "pnpm --filter \"!@klinpi/studio\" -r build",
+    "start": "pnpm --filter \"!./packages/contracts\" --filter \"!./packages/compute\" -r --parallel dev",
     "test": "vitest",
     "dev:studio": "cd packages/studio && pnpm dev",
     "dev:gateway": "cd packages/gateway && pnpm run dev",
@@ -16,7 +17,7 @@
     "studio:lint": "pnpm --filter @klinpi/studio lint",
     "drizzle:generate": "pnpm --filter @klinpi/db exec drizzle-kit generate",
     "drizzle:migrate": "pnpm --filter @klinpi/db exec drizzle-kit migrate",
-    "drizzle:studio": "pnpm --filter @klinpi/db exec drizzle-kit studio"
+    "studio": "pnpm --filter @klinpi/db exec drizzle-kit studio"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
