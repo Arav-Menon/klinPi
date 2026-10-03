@@ -1,4 +1,4 @@
-import type { AgentTool } from "../types.js";
+import type { AgentTool } from "../../types.js";
 import { sandboxManger } from "@klinpi/compute";
 
 export const clone_repo: AgentTool = {
