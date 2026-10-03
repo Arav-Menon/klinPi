@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "./env.js";
 
-const JWT_EXPIRES_IN = "15m";
+const JWT_EXPIRES_IN = "1440m";
 
 function getJwtSecret(): string {
     if (!JWT_SECRET) {
