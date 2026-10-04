@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runLoop } from "../../packages/runtime/src/loop.js";
+import { runLoop, MAX_ITERATIONS } from "../../packages/runtime/src/loop.js";
 import type {
     AgentTool,
     AgentEventPayload,
@@ -215,7 +215,7 @@ describe("runLoop", () => {
     it("should emit AGENT_ERROR when max iterations reached", async () => {
         const tool = createMockTool();
         const modelFn = createMockModelFn(
-            Array.from({ length: 11 }, () => ({
+            Array.from({ length: MAX_ITERATIONS + 1 }, () => ({
                 content: null,
                 toolCalls: [createMockToolCall("call_x", "test_tool", '{"input":"loop"}')],
                 finishReason: "tool_calls" as const,
