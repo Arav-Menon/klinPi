@@ -8,7 +8,7 @@ vi.mock("@klinpi/compute", () => ({
     listDir: listMocks.listDir,
 }));
 
-import { list_files } from "../../packages/runtime/src/tools/list_files.js";
+import { list_files } from "../../packages/runtime/src/tools/file_tools/list_files.js";
 
 describe("list_files tool", () => {
     beforeEach(() => {
