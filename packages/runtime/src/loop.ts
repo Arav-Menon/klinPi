@@ -6,7 +6,7 @@ import type {
     ModelToolCall,
 } from "./types.js";
 
-const MAX_ITERATIONS = 10;
+export const MAX_ITERATIONS = 30;
 
 export interface LoopInput {
     messages: LoopMessage[];
