@@ -1,5 +1,5 @@
 import { writeFile } from "@klinpi/compute";
-import type { AgentTool } from "../types.js";
+import type { AgentTool } from "../../types.js";
 
 export const edit_file: AgentTool = {
     name: "edit_file",
