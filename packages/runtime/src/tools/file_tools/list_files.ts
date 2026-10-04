@@ -1,5 +1,5 @@
 import { listDir } from "@klinpi/compute";
-import type { AgentTool } from "../types.js";
+import type { AgentTool } from "../../types.js";
 
 export const list_files: AgentTool = {
     name: "list_files",
