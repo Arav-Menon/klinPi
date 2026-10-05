@@ -17,7 +17,7 @@ export const git_commit: AgentTool = {
     name: "git_commit",
     requiresSandbox: true,
     description:
-        "Create a Git commit from already-staged changes in the sandbox repository (/workspace). Stage the intended files with git_stage first — this tool refuses when nothing is staged. Write a meaningful conventional commit message (e.g. 'feat: add FastAPI GET method documentation'); never use placeholder messages like 'changes' or 'update'.",
+        "Create a Git commit from already-staged changes in the sandbox repository (/workspace). Stage the intended files with git_stage first — this tool refuses when nothing is staged. Write a meaningful conventional commit message (e.g. 'feat: add FastAPI GET method documentation'); never use placeholder messages like 'changes' or 'update'. Only as part of an explicit change/commit/PR workflow — never for read-only requests.",
 
     parameters: {
         type: "object",
@@ -79,7 +79,7 @@ export const git_commit: AgentTool = {
             );
             const [hash, ...subject] = head.stdout.trim().split("\n");
             return truncateOutput(
-                `Created commit ${hash ?? "(unknown)"}: ${subject.join(" ").trim() || message.trim()}\nPush the branch with git_push before creating a Pull Request.`,
+                `Created commit ${hash ?? "(unknown)"}: ${subject.join(" ").trim() || message.trim()}\nPush the branch with git_push before creating a Pull Request (only when one was requested).`,
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
