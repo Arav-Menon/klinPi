@@ -5,7 +5,7 @@ export const read_file: AgentTool = {
     name: "read_file",
     requiresSandbox: true,
     description:
-        "Read the contents of a file from the agent's sandbox filesystem. Repository files live under /workspace — if the user references a repository file as main.py or /README.md, read /workspace/main.py or /workspace/README.md",
+        "Read the contents of a file from the agent's sandbox filesystem. Repository files live under /workspace. When the file is not at the repository root, locate it first with list_files and then read its exact path (e.g. main.py may be /workspace/basic-crud/main.py). Read-only: never use this as a prelude to modifying the repository unless the user asked for a change.",
 
     parameters: {
         type: "object",
