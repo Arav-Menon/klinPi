@@ -5,7 +5,7 @@ export const git_status: AgentTool = {
     name: "git_status",
     requiresSandbox: true,
     description:
-        "Show the working tree status of the sandbox repository (/workspace): current branch, staged, unstaged and untracked changes. Use before staging or committing, after editing files, and when reviewing what would be included in a commit.",
+        "Show the working tree status of the sandbox repository (/workspace): current branch, staged, unstaged and untracked changes. Use during a change/commit/PR workflow (before staging or committing, after editing files) or when the user explicitly asks about Git state. NOT needed for ordinary file reading or summarization — do not call it for read-only requests.",
 
     parameters: {
         type: "object",
