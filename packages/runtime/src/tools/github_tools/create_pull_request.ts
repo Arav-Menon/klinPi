@@ -58,7 +58,7 @@ export function createCreatePullRequestTool(context: ToolContext): AgentTool {
   return {
     name: "create_pull_request",
     description:
-      "Create a GitHub Pull Request from an existing pushed branch. This tool ONLY performs the GitHub API PR creation operation — it never creates or switches branches, edits files, runs shell commands, stages, commits, or pushes. Call it as the FINAL step: implementation, validation, review, commit and push must already be complete, and 'head' must exist on GitHub containing the committed changes. Do not call this tool before the branch has been pushed successfully. The caller never provides credentials or a user id.",
+      "Create a GitHub Pull Request from an existing remote branch. This tool ONLY creates the Pull Request via the GitHub API — it never creates or switches branches, modifies files, executes commands, runs tests, stages, commits, or pushes. When the PR contains new implementation work, the caller must complete the implementation, validation, commit and push workflow first: call this tool as the FINAL step, only after the branch has been pushed successfully and 'head' exists on GitHub containing the committed changes. The caller never provides credentials or a user id.",
 
     parameters: {
       type: "object",
