@@ -5,7 +5,7 @@ export const git_diff: AgentTool = {
     name: "git_diff",
     requiresSandbox: true,
     description:
-        "Show Git diffs of the sandbox repository (/workspace). Default: all staged and unstaged changes against the last commit. Set staged=true to review only what is staged for the next commit. Review the diff after implementing changes and before committing.",
+        "Show Git diffs of the sandbox repository (/workspace). Default: all staged and unstaged changes against the last commit; set staged=true to review only staged changes. Use to review your own changes during a change/PR workflow. NOT required for simple repository reading — skip it for read-only requests.",
 
     parameters: {
         type: "object",
