@@ -17,7 +17,7 @@ export function createGitPushTool(context: ToolContext): AgentTool {
         name: "git_push",
         requiresSandbox: true,
         description:
-            "Push a local branch of the sandbox repository (/workspace) to its Git remote and set the upstream. Defaults to the current checked-out branch; pass 'branch' to push a specific local branch. The push MUST succeed before create_pull_request can be called — GitHub needs the branch to exist on the remote as the PR head. Uses the authenticated user's connected GitHub account; the caller never provides credentials or a user id.",
+            "Push a local branch of the sandbox repository (/workspace) to its Git remote and set the upstream. Defaults to the current checked-out branch; pass 'branch' to push a specific local branch. Only when the user requested a push or PR workflow — never for read-only requests. The push MUST succeed before create_pull_request can be called — GitHub needs the branch to exist on the remote as the PR head. Uses the authenticated user's connected GitHub account; the caller never provides credentials or a user id.",
 
         parameters: {
             type: "object",
@@ -159,7 +159,7 @@ export function createGitPushTool(context: ToolContext): AgentTool {
                     ? "\nWarning: this is a default branch ('main'/'master'). Pull Request work normally uses a dedicated feature/fix branch — continue only if the user explicitly asked to push this branch."
                     : "";
                 return truncateOutput(
-                    `Pushed branch '${branch}' to '${remote}' (upstream set). The branch now exists on the remote with the committed changes — create_pull_request may be called as the final step.${warning}\n${scrubSecretPatterns(remoteOutput)}`,
+                    `Pushed branch '${branch}' to '${remote}' (upstream set). If a Pull Request was requested: create_pull_request may be called as the final step.${warning}\n${scrubSecretPatterns(remoteOutput)}`,
                 );
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
