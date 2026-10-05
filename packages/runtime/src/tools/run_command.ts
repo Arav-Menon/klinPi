@@ -11,7 +11,7 @@ export const run_command: AgentTool = {
     name: "run_command",
     requiresSandbox: true,
     description:
-        "Run a shell command inside the sandbox (default working directory /workspace). Use this for validation — tests, type checking, linting, formatting, builds — and for inspecting repository state through the shell. For Git operations prefer the dedicated git_branch, git_status, git_diff, git_stage, git_commit and git_push tools. Output is truncated to a safe length.",
+        "Run a shell command inside the sandbox (default working directory /workspace). Use this for validation — tests, type checking, linting, formatting, builds. For reading file contents prefer read_file and for listing directories prefer list_files instead of cat/ls. For Git operations prefer the dedicated git_branch, git_status, git_diff, git_stage, git_commit and git_push tools. Output is truncated to a safe length.",
 
     parameters: {
         type: "object",
