@@ -5,7 +5,7 @@ export const edit_file: AgentTool = {
     name: "edit_file",
     requiresSandbox: true,
     description:
-        "Write content to a file in the agent's sandbox filesystem. Repository files live under /workspace — if the user references a repository file as main.py or /README.md, write /workspace/main.py or /workspace/README.md",
+        "Write content to a file in the agent's sandbox filesystem. Repository files live under /workspace (e.g. /workspace/main.py). Do not use for read-only requests — writing a file is a repository mutation and requires the user to have asked for a change.",
 
     parameters: {
         type: "object",
