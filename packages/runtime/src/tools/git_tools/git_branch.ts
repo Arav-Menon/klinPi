@@ -10,7 +10,7 @@ export const git_branch: AgentTool = {
     name: "git_branch",
     requiresSandbox: true,
     description:
-        "Create and switch to a new Git branch in the sandbox repository (/workspace), or switch to an existing branch. For Pull Request work this is the FIRST step: create a dedicated feature/fix branch before implementing changes instead of working on the default branch. This tool only performs checkout — it does not stage, commit, or push.",
+        "Create and switch to a new Git branch in the sandbox repository (/workspace), or switch to an existing branch. For Pull Request work this is the FIRST step: create a dedicated feature/fix branch before implementing changes instead of working on the default branch. Only as part of an explicit change or PR workflow — never for read-only requests. This tool only performs checkout — it does not stage, commit, or push.",
 
     parameters: {
         type: "object",
@@ -89,7 +89,7 @@ export const git_branch: AgentTool = {
                 "git rev-parse --abbrev-ref HEAD",
             );
             const currentBranch = current.stdout.trim() || branch;
-            return `${create ? "Created and switched to" : "Switched to"} branch '${currentBranch}'. Next: inspect the repository, implement the change, review with git_diff, validate with run_command, then git_stage → git_commit → git_push → create_pull_request — one step at a time, checking each result.`;
+            return `${create ? "Created and switched to" : "Switched to"} branch '${currentBranch}'.`;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             return `Error running git branch: ${message}`;
