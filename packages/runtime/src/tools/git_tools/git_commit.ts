@@ -1,4 +1,4 @@
-import type { AgentTool } from "../../types.js";
+import type { AgentTool, ToolContext } from "../../types.js";
 import {
     ensureGitRepository,
     runShell,
@@ -13,8 +13,11 @@ const IDENTITY_COMMAND =
     `git config user.name >/dev/null 2>&1 || git config user.name ${DEFAULT_AUTHOR_NAME} && ` +
     `git config user.email >/dev/null 2>&1 || git config user.email ${DEFAULT_AUTHOR_EMAIL}`;
 
-export const git_commit: AgentTool = {
-    name: "git_commit",
+export function createGitCommitTool(context: ToolContext): AgentTool {
+    const { workflow } = context;
+
+    return {
+        name: "git_commit",
     requiresSandbox: true,
     description:
         "Create a Git commit from already-staged changes in the sandbox repository (/workspace). Stage the intended files with git_stage first — this tool refuses when nothing is staged. Write a meaningful conventional commit message (e.g. 'feat: add FastAPI GET method documentation'); never use placeholder messages like 'changes' or 'update'. Only as part of an explicit change/commit/PR workflow — never for read-only requests.",
@@ -78,6 +81,9 @@ export const git_commit: AgentTool = {
                 "git log -1 --format=%H%n%s",
             );
             const [hash, ...subject] = head.stdout.trim().split("\n");
+            // Recorded so the run can tell whether requested commit/push/PR
+            // steps actually happened before it stops.
+            workflow.commits += 1;
             return truncateOutput(
                 `Created commit ${hash ?? "(unknown)"}: ${subject.join(" ").trim() || message.trim()}\nPush the branch with git_push before creating a Pull Request (only when one was requested).`,
             );
@@ -86,4 +92,5 @@ export const git_commit: AgentTool = {
             return `Error creating commit: ${message}`;
         }
     },
-};
+    };
+}
