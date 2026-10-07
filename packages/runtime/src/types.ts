@@ -16,12 +16,15 @@ export interface AgentTool {
 }
 
 import type { MemoryService } from "./state/memory.js";
+import type { RunWorkflowState } from "./lib/workflowState.js";
 
 export interface ToolContext {
     memoryService: MemoryService;
     userId: string;
     sessionId: string;
     repositoryId: string | null;
+    /** State shared by the tools of a single agent run (read → write → push → PR). */
+    workflow: RunWorkflowState;
 }
 
 export interface AgentRunInput {
