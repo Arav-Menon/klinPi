@@ -39,6 +39,7 @@ vi.mock("@klinpi/db", () => ({
 
 import { createCreatePullRequestTool } from "../../packages/runtime/src/tools/github_tools/create_pull_request.js";
 import type { ToolContext } from "../../packages/runtime/src/types.js";
+import { createRunWorkflowState } from "../../packages/runtime/src/lib/workflowState.js";
 
 const TOKEN = "gho_SuperSecretToken123abcDEF";
 
@@ -65,6 +66,7 @@ function makeContext(userId = "user-1"): ToolContext {
     userId,
     sessionId: "session-1",
     repositoryId: null,
+    workflow: createRunWorkflowState(),
   };
 }
 
@@ -218,6 +220,42 @@ describe("create_pull_request tool", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).not.toContain("/pulls");
+  });
+
+  it("refuses to open a PR when this run modified files that were never pushed", async () => {
+    redisMock.getCache.mockResolvedValue(TOKEN);
+    const context = makeContext();
+    context.workflow.inspected = true;
+    context.workflow.writeCount = 1;
+    context.workflow.writtenPaths.add("/workspace/Dockerfile");
+
+    const result = await createCreatePullRequestTool(context).execute(args, "");
+
+    expect(String(result)).toContain("have not been pushed yet");
+    expect(String(result)).toContain("/workspace/Dockerfile");
+    expect(String(result)).toContain("git_stage");
+    expect(String(result)).toContain("git_commit");
+    expect(String(result)).toContain("git_push");
+    expect(String(result)).toContain("git_push once to confirm");
+    expect(String(result)).not.toContain(TOKEN);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("opens the PR once the run's writes have been pushed", async () => {
+    redisMock.getCache.mockResolvedValue(TOKEN);
+    const context = makeContext();
+    context.workflow.inspected = true;
+    context.workflow.writeCount = 1;
+    context.workflow.writesAtLastPush = 1;
+    context.workflow.pushedBranches.add("fix-login");
+
+    const result = await createCreatePullRequestTool(context).execute(args, "");
+
+    expect(result).toMatchObject({ pullRequestNumber: 7, head: "fix-login" });
+    expect(context.workflow.prCreated).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url] = fetchMock.mock.calls[1] as [string];
+    expect(url).toBe("https://api.github.com/repos/octocat/hello-world/pulls");
   });
 
   it("reuses the cached token, skips the database and POSTs /repos/{owner}/{repo}/pulls", async () => {
