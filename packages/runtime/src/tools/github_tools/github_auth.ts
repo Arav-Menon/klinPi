@@ -1,6 +1,7 @@
 import { cache } from "@klinpi/redis";
 import { getDb, schema } from "@klinpi/db";
 import { and, eq } from "drizzle-orm";
+import type { ToolContext } from "../../types.js";
 
 const TOKEN_CACHE_PREFIX = "github:access-token:";
 const TOKEN_CACHE_TTL_SECONDS = 60 * 60;
@@ -73,6 +74,17 @@ export async function resolveGitHubToken(userId: string): Promise<TokenLookup> {
   }
 
   return { token };
+}
+
+/**
+ * Resolve the GitHub token for an agent-tool run. The identity always comes
+ * from the authenticated tool context — never from model-provided arguments.
+ */
+export async function resolveToolToken(context: ToolContext): Promise<TokenLookup> {
+  if (!context.userId) {
+    return { error: "Error: no authenticated user is associated with this agent run." };
+  }
+  return resolveGitHubToken(context.userId);
 }
 
 export async function invalidateGitHubToken(userId: string): Promise<void> {
