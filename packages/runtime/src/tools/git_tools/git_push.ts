@@ -13,6 +13,8 @@ const REMOTE_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 const DEFAULT_BRANCHES = new Set(["main", "master"]);
 
 export function createGitPushTool(context: ToolContext): AgentTool {
+    const { workflow } = context;
+
     return {
         name: "git_push",
         requiresSandbox: true,
@@ -158,6 +160,10 @@ export function createGitPushTool(context: ToolContext): AgentTool {
                 const warning = DEFAULT_BRANCHES.has(branch)
                     ? "\nWarning: this is a default branch ('main'/'master'). Pull Request work normally uses a dedicated feature/fix branch — continue only if the user explicitly asked to push this branch."
                     : "";
+                // Record the push so create_pull_request can verify that this
+                // run's file changes are actually on GitHub before opening a PR.
+                workflow.pushedBranches.add(branch);
+                workflow.writesAtLastPush = workflow.writeCount;
                 return truncateOutput(
                     `Pushed branch '${branch}' to '${remote}' (upstream set). If a Pull Request was requested: create_pull_request may be called as the final step.${warning}\n${scrubSecretPatterns(remoteOutput)}`,
                 );
