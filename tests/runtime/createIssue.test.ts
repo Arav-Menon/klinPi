@@ -32,6 +32,7 @@ vi.mock("@klinpi/db", () => ({
 
 import { createCreateIssueTool } from "../../packages/runtime/src/tools/github_tools/create_issue.js";
 import type { ToolContext } from "../../packages/runtime/src/types.js";
+import { createRunWorkflowState } from "../../packages/runtime/src/lib/workflowState.js";
 
 const TOKEN = "gho_SuperSecretToken123abcDEF";
 
@@ -49,6 +50,7 @@ function makeContext(userId = "user-1"): ToolContext {
         userId,
         sessionId: "session-1",
         repositoryId: null,
+        workflow: createRunWorkflowState(),
     };
 }
 
