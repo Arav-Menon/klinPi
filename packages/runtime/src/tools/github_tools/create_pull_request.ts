@@ -5,8 +5,7 @@ import {
   sanitize,
 } from "./github_auth.js";
 import { createPullRequest, compareBranches } from "./github_api.js";
-import { getDb, schema } from "@klinpi/db";
-import { eq } from "drizzle-orm";
+import { resolveLinkedRepository } from "./github_repo.js";
 
 interface CreatePullRequestArgs {
   owner?: unknown;
@@ -17,48 +16,11 @@ interface CreatePullRequestArgs {
   base?: unknown;
 }
 
-interface LinkedRepository {
-  owner: string;
-  repo: string;
-  fullName: string;
-  defaultBranch: string;
-}
-
-async function resolveLinkedRepository(
-  context: ToolContext,
-): Promise<LinkedRepository | null> {
-  if (!context.repositoryId) {
-    return null;
-  }
-  try {
-    const db = getDb();
-    const [row] = await db
-      .select()
-      .from(schema.repositories)
-      .where(eq(schema.repositories.id, context.repositoryId))
-      .limit(1);
-    if (!row || typeof row.fullName !== "string") {
-      return null;
-    }
-    const [owner, repo] = row.fullName.split("/");
-    if (!owner || !repo) {
-      return null;
-    }
-    const defaultBranch =
-      typeof row.defaultBranch === "string" && row.defaultBranch.trim()
-        ? row.defaultBranch.trim()
-        : "main";
-    return { owner, repo, fullName: row.fullName, defaultBranch };
-  } catch {
-    return null;
-  }
-}
-
 export function createCreatePullRequestTool(context: ToolContext): AgentTool {
   return {
     name: "create_pull_request",
     description:
-      "Create a GitHub Pull Request from an existing remote branch. This tool ONLY creates the Pull Request via the GitHub API — it never creates or switches branches, modifies files, executes commands, runs tests, stages, commits, or pushes. When the PR contains new implementation work, the caller must complete the implementation, validation, commit and push workflow first: call this tool as the FINAL step, only after the branch has been pushed successfully and 'head' exists on GitHub containing the committed changes. The caller never provides credentials or a user id.",
+      "Create a GitHub Pull Request from an existing remote branch. This tool ONLY creates the Pull Request via the GitHub API — it never creates or switches branches, modifies files, executes commands, runs tests, stages, commits, or pushes. When the PR contains new implementation work, the caller must complete the implementation, validation, commit and push workflow first: call this tool as the FINAL step, only after the branch has been pushed successfully and 'head' exists on GitHub containing the committed changes. If this run already modified repository files, they must be committed and pushed before this tool will run — that precondition is enforced here. The caller never provides credentials or a user id.",
 
     parameters: {
       type: "object",
@@ -135,6 +97,22 @@ export function createCreatePullRequestTool(context: ToolContext): AgentTool {
         return "Error: no authenticated user is associated with this agent run.";
       }
 
+      // Precondition: changes made in this run must be on GitHub. A pull
+      // request opened before the push would silently omit them, so refuse
+      // until a successful git_push has recorded the current state.
+      const { workflow } = context;
+      if (workflow.writeCount > workflow.writesAtLastPush) {
+        const written = [...workflow.writtenPaths];
+        const shown = written.slice(0, 3).join(", ");
+        const more = written.length > 3 ? ` and ${written.length - 3} more` : "";
+        return (
+          `Error: this run modified ${workflow.writeCount} file(s) (${shown}${more}) that have not been pushed yet, ` +
+          "so a pull request would not contain them. Stage the intended files (git_stage), commit them (git_commit), " +
+          "push the branch (git_push), then call create_pull_request again. " +
+          "If the changes were already pushed by other means, call git_push once to confirm the branch is up to date and retry."
+        );
+      }
+
       const lookup = await resolveGitHubToken(context.userId);
       if (lookup.error) {
         return lookup.error;
@@ -172,7 +150,7 @@ export function createCreatePullRequestTool(context: ToolContext): AgentTool {
       }
 
       try {
-        return await createPullRequest(token, {
+        const pullRequest = await createPullRequest(token, {
           owner,
           repo,
           title,
@@ -180,6 +158,8 @@ export function createCreatePullRequestTool(context: ToolContext): AgentTool {
           head,
           base,
         });
+        workflow.prCreated = true;
+        return pullRequest;
       } catch (error) {
         const status = (error as { status?: number }).status;
         const rawMessage =
