@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createSaveMemoryTool } from "../../packages/runtime/src/tools/save_memory.js";
 import type { ToolContext } from "../../packages/runtime/src/types.js";
+import { createRunWorkflowState } from "../../packages/runtime/src/lib/workflowState.js";
 
 function createContext(
     overrides?: Partial<ToolContext>,
@@ -15,6 +16,7 @@ function createContext(
         userId: "user-1",
         sessionId: "session-1",
         repositoryId: "repo-1",
+        workflow: createRunWorkflowState(),
         createMemory,
         ...overrides,
     } as ToolContext & { createMemory: ReturnType<typeof vi.fn> };
