@@ -14,6 +14,17 @@ vi.mock("@klinpi/compute", () => ({
     createSandbox: computeMocks.create,
     sandboxManger: { registerSbx: computeMocks.register },
 }));
+
+vi.mock(
+    "../../packages/runtime/src/tools/github_tools/github_auth.js",
+    () => ({
+        tokenCacheKey: (userId: string) => `github:access-token:${userId}`,
+        sanitize: (text: string) => text,
+        resolveGitHubToken: vi.fn(async () => ({ token: "gho_test_token" })),
+        resolveToolToken: vi.fn(async () => ({ token: "gho_test_token" })),
+        invalidateGitHubToken: vi.fn(async () => {}),
+    }),
+);
 import { ContextBuilder } from "../../packages/runtime/src/state/context.js";
 import type { MemoryService } from "../../packages/runtime/src/state/memory.js";
 import type { MessageService } from "../../packages/runtime/src/state/message.js";
@@ -288,6 +299,226 @@ describe("Agent", () => {
             expect(mockMessageService.createMessage).toHaveBeenCalledWith(
                 expect.objectContaining({ sessionId: "session-B" }),
             );
+        });
+    });
+
+    describe("premature-stop continuation", () => {
+        const TASK_PROMPT =
+            "Add a Dockerfile to this repository with a production Node.js build, commit it on a new branch called feat/dockerfile, push the branch, and open a pull request against main.";
+
+        it("nudges a prose stop with a concrete tool directive until the budget is spent", async () => {
+            mockModelFn = createMockModelFn({
+                content:
+                    "The task requires a careful plan. Here is the explanation of what should be done step by step.",
+            });
+
+            const nudgingAgent = new Agent({
+                contextBuilder,
+                memoryService: mockMemoryService,
+                messageService: mockMessageService,
+                modelFn: mockModelFn,
+            });
+
+            const events: AgentEventPayload[] = [];
+            await nudgingAgent.run(
+                {
+                    userId: "user-123",
+                    sessionId: "session-nudge",
+                    repositoryId: "",
+                    prompt: TASK_PROMPT,
+                },
+                (e) => events.push(e),
+            );
+
+            const nudges = events.filter(
+                (e) =>
+                    e.type === "AGENT_STATUS" &&
+                    String(e.content).includes("continuing the run"),
+            );
+            expect(nudges).toHaveLength(6);
+            expect(mockModelFn).toHaveBeenCalledTimes(7);
+            expect(
+                events.filter((e) => e.type === "AGENT_MESSAGE"),
+            ).toHaveLength(1);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+
+            const calls = vi.mocked(mockModelFn).mock.calls;
+            for (let i = 1; i < calls.length; i++) {
+                const conversation = calls[i]![0] as Array<{
+                    role: string;
+                    content: string;
+                }>;
+                const last = conversation[conversation.length - 1]!;
+                expect(last.role).toBe("user");
+                expect(last.content).toContain("list_files");
+                expect(last.content).toContain("reply with prose");
+            }
+        });
+
+        it("accepts the first answer when nothing is missing", async () => {
+            mockModelFn = createMockModelFn({ content: "Here is why: ..." });
+
+            const idleAgent = new Agent({
+                contextBuilder,
+                memoryService: mockMemoryService,
+                messageService: mockMessageService,
+                modelFn: mockModelFn,
+            });
+
+            const events: AgentEventPayload[] = [];
+            await idleAgent.run(
+                { ...VALID_INPUT, repositoryId: "" },
+                (e) => events.push(e),
+            );
+
+            expect(mockModelFn).toHaveBeenCalledTimes(1);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+        });
+    });
+
+    describe("issue-request completion (no invented follow-up work)", () => {
+        function issueToolCall(): {
+            content: string | null;
+            finishReason: string;
+            toolCalls: Array<{
+                id: string;
+                type: "function";
+                function: { name: string; arguments: string };
+            }>;
+        } {
+            return {
+                content: null,
+                finishReason: "tool_calls",
+                toolCalls: [
+                    {
+                        id: "call-create-issue",
+                        type: "function",
+                        function: {
+                            name: "create_issue",
+                            arguments: JSON.stringify({
+                                owner: "Arav-Menon",
+                                repo: "klinpi",
+                                title: "Redesign UI",
+                                body: "Request to redesign the user interface for improved usability and modern aesthetics.",
+                            }),
+                        },
+                    },
+                ],
+            };
+        }
+
+        async function runIssueRequest(
+            prompt: string,
+            finalAnswer: string,
+        ): Promise<{ events: AgentEventPayload[]; modelFn: ModelFn }> {
+            const modelFn = vi
+                .fn()
+                .mockResolvedValueOnce(issueToolCall())
+                .mockResolvedValue({
+                    content: finalAnswer,
+                    finishReason: "stop",
+                    toolCalls: null,
+                }) as unknown as ModelFn;
+
+            const issueAgent = new Agent({
+                contextBuilder,
+                memoryService: mockMemoryService,
+                messageService: mockMessageService,
+                modelFn,
+            });
+
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = vi.fn().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        number: 10,
+                        html_url:
+                            "https://github.com/Arav-Menon/klinpi/issues/10",
+                        title: "Redesign UI",
+                        state: "open",
+                    }),
+                    { status: 201, headers: { "content-type": "application/json" } },
+                ),
+            ) as unknown as typeof fetch;
+
+            const events: AgentEventPayload[] = [];
+            try {
+                await issueAgent.run(
+                    {
+                        userId: "user-123",
+                        sessionId: `session-issue-${crypto.randomUUID()}`,
+                        repositoryId: "",
+                        prompt,
+                    },
+                    (e) => events.push(e),
+                );
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+
+            return { events, modelFn };
+        }
+
+        function expectSingleIssueRun(
+            events: AgentEventPayload[],
+            modelFn: ModelFn,
+            finalAnswer: string,
+            prompt: string,
+        ): void {
+            const toolNames = events
+                .filter((e) => e.type === "TOOL_CALL")
+                .map((e) => e.toolCall!.name);
+            expect(toolNames).toEqual(["create_issue"]);
+
+            expect(
+                events.filter(
+                    (e) =>
+                        e.type === "AGENT_STATUS" &&
+                        String(e.content).includes("continuing the run"),
+                ),
+            ).toHaveLength(0);
+
+            const messages = events.filter((e) => e.type === "AGENT_MESSAGE");
+            expect(messages).toHaveLength(1);
+            expect(messages[0]!.content).toBe(finalAnswer);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+
+            expect(vi.mocked(modelFn)).toHaveBeenCalledTimes(2);
+            const followUp = vi.mocked(modelFn).mock.calls[1]![0] as Array<{
+                role: string;
+                content: string | null;
+            }>;
+            const last = followUp[followUp.length - 1]!;
+            expect(last.role).toBe("tool");
+            const userMessages = followUp.filter((m) => m.role === "user");
+            expect(userMessages).toHaveLength(1);
+            expect(userMessages[0]!.content).toBe(prompt);
+        }
+
+        it("stops after create_issue succeeds for the reported failure prompt", async () => {
+            const prompt =
+                "create new issue on this repo bro about redisign the UI";
+            const finalAnswer =
+                "Created issue #10: Redesign UI — https://github.com/Arav-Menon/klinpi/issues/10";
+
+            const { events, modelFn } = await runIssueRequest(
+                prompt,
+                finalAnswer,
+            );
+
+            expectSingleIssueRun(events, modelFn, finalAnswer, prompt);
+        });
+
+        it("stops after create_issue succeeds even when the classifier alone would gap", async () => {
+            const prompt = "create a bug report about the broken build";
+            const finalAnswer = "Created bug report issue #10: Redesign UI.";
+
+            const { events, modelFn } = await runIssueRequest(
+                prompt,
+                finalAnswer,
+            );
+
+            expectSingleIssueRun(events, modelFn, finalAnswer, prompt);
         });
     });
 
