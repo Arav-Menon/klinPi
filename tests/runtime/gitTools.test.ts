@@ -36,10 +36,11 @@ import { git_branch } from "../../packages/runtime/src/tools/git_tools/git_branc
 import { git_status } from "../../packages/runtime/src/tools/git_tools/git_status.js";
 import { git_diff } from "../../packages/runtime/src/tools/git_tools/git_diff.js";
 import { git_stage } from "../../packages/runtime/src/tools/git_tools/git_stage.js";
-import { git_commit } from "../../packages/runtime/src/tools/git_tools/git_commit.js";
+import { createGitCommitTool } from "../../packages/runtime/src/tools/git_tools/git_commit.js";
 import { createGitPushTool } from "../../packages/runtime/src/tools/git_tools/git_push.js";
 import { run_command } from "../../packages/runtime/src/tools/run_command.js";
 import type { ToolContext } from "../../packages/runtime/src/types.js";
+import { createRunWorkflowState } from "../../packages/runtime/src/lib/workflowState.js";
 
 const TOKEN = "gho_SuperSecretToken123abcDEF";
 const REPO_CHECK = /test -d \/workspace\/\.git/;
@@ -50,6 +51,7 @@ function makeContext(userId = "user-1"): ToolContext {
         userId,
         sessionId: "session-1",
         repositoryId: null,
+        workflow: createRunWorkflowState(),
     };
 }
 
@@ -296,7 +298,7 @@ describe("git tools", () => {
                 [/git status --porcelain/, () => ok(" M docs/readme.md\n")],
             ]);
 
-            const result = await git_commit.execute(
+            const result = await createGitCommitTool(makeContext()).execute(
                 { message: "feat: add docs" },
                 "sbx-1",
             );
@@ -313,7 +315,7 @@ describe("git tools", () => {
                 [/git status --porcelain/, () => ok("")],
             ]);
 
-            const result = await git_commit.execute(
+            const result = await createGitCommitTool(makeContext()).execute(
                 { message: "feat: add docs" },
                 "sbx-1",
             );
@@ -330,7 +332,7 @@ describe("git tools", () => {
                 [/git log -1/, () => ok("abc1234def567890\nfeat: add docs\n")],
             ]);
 
-            const result = await git_commit.execute(
+            const result = await createGitCommitTool(makeContext()).execute(
                 { message: "feat: add docs" },
                 "sbx-1",
             );
@@ -343,8 +345,43 @@ describe("git tools", () => {
         });
 
         it("rejects an empty message", async () => {
-            const result = await git_commit.execute({ message: "  " }, "sbx-1");
+            const result = await createGitCommitTool(makeContext()).execute({ message: "  " }, "sbx-1");
             expect(String(result)).toContain("'message' must be a non-empty string");
+        });
+
+        it("records the commit on the run workflow state", async () => {
+            installRun([
+                [REPO_CHECK, () => ok("HAS_REPO\n")],
+                [/git config user/, () => ok("")],
+                [/git diff --cached --quiet/, () => fail("", 1)],
+                [/^git commit/, () => ok(" [main abc1234] feat: add docs\n")],
+                [/git log -1/, () => ok("abc1234def567890\nfeat: add docs\n")],
+            ]);
+
+            const context = makeContext();
+            await createGitCommitTool(context).execute(
+                { message: "feat: add docs" },
+                "sbx-1",
+            );
+
+            expect(context.workflow.commits).toBe(1);
+        });
+
+        it("does not record the commit when the commit fails", async () => {
+            installRun([
+                [REPO_CHECK, () => ok("HAS_REPO\n")],
+                [/git config user/, () => ok("")],
+                [/git diff --cached --quiet/, () => fail("", 1)],
+                [/^git commit/, () => fail("error: hook declined")],
+            ]);
+
+            const context = makeContext();
+            await createGitCommitTool(context).execute(
+                { message: "feat: add docs" },
+                "sbx-1",
+            );
+
+            expect(context.workflow.commits).toBe(0);
         });
     });
 
@@ -483,6 +520,46 @@ describe("git tools", () => {
             ).toBe(false);
         });
 
+        it("records the push snapshot so create_pull_request knows changes reached GitHub", async () => {
+            redisMock.getCache.mockResolvedValue(TOKEN);
+            installRun([
+                [REPO_CHECK, () => ok("HAS_REPO\n")],
+                [/rev-parse --abbrev-ref HEAD/, () => ok("feat/x\n")],
+                [/remote get-url/, () => ok("https://github.com/octo/repo.git\n")],
+                [/remote set-url .*x-access-token/, () => ok("")],
+                [/^git push/, () => ok("pushed\n")],
+                [/remote set-url/, () => ok("")],
+            ]);
+
+            const context = makeContext();
+            context.workflow.writeCount = 2;
+
+            await createGitPushTool(context).execute({}, "sbx-1");
+
+            expect(context.workflow.writesAtLastPush).toBe(2);
+            expect(context.workflow.pushedBranches.has("feat/x")).toBe(true);
+        });
+
+        it("does not record the snapshot when the push fails", async () => {
+            redisMock.getCache.mockResolvedValue(TOKEN);
+            installRun([
+                [REPO_CHECK, () => ok("HAS_REPO\n")],
+                [/rev-parse --abbrev-ref HEAD/, () => ok("feat/x\n")],
+                [/remote get-url/, () => ok("https://github.com/octo/repo.git\n")],
+                [/remote set-url .*x-access-token/, () => ok("")],
+                [/^git push/, () => fail("error: failed to push some refs to 'origin'")],
+                [/remote set-url/, () => ok("")],
+            ]);
+
+            const context = makeContext();
+            context.workflow.writeCount = 2;
+
+            await createGitPushTool(context).execute({}, "sbx-1");
+
+            expect(context.workflow.writesAtLastPush).toBe(0);
+            expect(context.workflow.pushedBranches.size).toBe(0);
+        });
+
         it("rejects an invalid branch argument before touching the sandbox", async () => {
             const result = await createGitPushTool(makeContext()).execute(
                 { branch: "bad;rm -rf" },
@@ -546,6 +623,96 @@ describe("git tools", () => {
         it("rejects an empty command", async () => {
             const result = await run_command.execute({ command: " " }, "sbx-1");
             expect(String(result)).toContain("'command' must be a non-empty string");
+        });
+
+        it("refuses shell redirection into the repository", async () => {
+            const run = installRun([]);
+
+            const result = await run_command.execute(
+                { command: "echo 'FROM node:20' > Dockerfile" },
+                "sbx-1",
+            );
+
+            expect(String(result)).toContain("must not create or modify repository files");
+            expect(String(result)).toContain("/workspace/Dockerfile");
+            expect(String(result)).toContain("read_file");
+            expect(String(result)).toContain("edit_file");
+            expect(run).not.toHaveBeenCalled();
+        });
+
+        it("refuses append redirection into an absolute repository path", async () => {
+            const run = installRun([]);
+
+            const result = await run_command.execute(
+                { command: "cat notes.txt >> /workspace/CHANGELOG.md" },
+                "sbx-1",
+            );
+
+            expect(String(result)).toContain("/workspace/CHANGELOG.md");
+            expect(run).not.toHaveBeenCalled();
+        });
+
+        it("refuses tee and in-place sed writes into the repository", async () => {
+            const teeRun = installRun([]);
+            const teeResult = await run_command.execute(
+                { command: "printf 'x' | tee /workspace/config.json" },
+                "sbx-1",
+            );
+            expect(String(teeResult)).toContain("/workspace/config.json");
+            expect(teeRun).not.toHaveBeenCalled();
+
+            const sedRun = installRun([]);
+            const sedResult = await run_command.execute(
+                { command: "sed -i 's/a/b/' app.js" },
+                "sbx-1",
+            );
+            expect(String(sedResult)).toContain("/workspace/app.js");
+            expect(sedRun).not.toHaveBeenCalled();
+        });
+
+        it("allows redirection to paths outside the repository", async () => {
+            const run = installRun([[/npm test/, () => ok("PASS\n")]]);
+
+            const result = await run_command.execute(
+                { command: "npm test > /tmp/test-output.log 2>&1" },
+                "sbx-1",
+            );
+
+            expect(String(result)).toContain("Exit code: 0");
+            expect(run).toHaveBeenCalledWith("npm test > /tmp/test-output.log 2>&1", {
+                cwd: "/workspace",
+            });
+        });
+
+        it("resolves relative redirect targets against the command cwd", async () => {
+            const run = installRun([]);
+
+            const result = await run_command.execute(
+                { command: "echo hi > build.log", cwd: "packages/runtime" },
+                "sbx-1",
+            );
+
+            expect(String(result)).toContain("/workspace/packages/runtime/build.log");
+            expect(run).not.toHaveBeenCalled();
+
+            const tmpRun = installRun([[/echo/, () => ok("hi\n")]]);
+            await run_command.execute(
+                { command: "echo hi > build.log", cwd: "/tmp" },
+                "sbx-1",
+            );
+            expect(tmpRun).toHaveBeenCalledWith("echo hi > build.log", { cwd: "/tmp" });
+        });
+
+        it("does not treat a '>' inside a commit message as a file write", async () => {
+            const run = installRun([[/git commit/, () => ok("committed\n")]]);
+
+            const result = await run_command.execute(
+                { command: "git commit -m 'Handle status > 0 responses'" },
+                "sbx-1",
+            );
+
+            expect(String(result)).toContain("Exit code: 0");
+            expect(run).toHaveBeenCalled();
         });
     });
 });
