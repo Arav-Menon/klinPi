@@ -8,6 +8,11 @@ import { ContextBuilder } from "./state/context.js";
 import type { MemoryService } from "./state/memory.js";
 import { MessageService } from "./state/message.js";
 import { getTools } from "./tools/index.js";
+import {
+    createRunWorkflowState,
+    missingWorkflowSteps,
+    nextStepDirective,
+} from "./lib/workflowState.js";
 import { runLoop } from "./loop.js";
 import { callModelWithTools } from "./model.js";
 import { SYSTEM_PROMPT } from "./lib/system-prompt.js";
@@ -218,12 +223,53 @@ export class Agent {
                 ...(repositoryContext ? { repositoryContext } : {}),
             });
 
+            const workflow = createRunWorkflowState();
             const tools = getTools({
                 memoryService: this.memoryService,
                 userId,
                 sessionId,
                 repositoryId: repositoryId || null,
+                workflow,
             });
+
+            // Bounded continuation: local models often answer in prose while
+            // requested steps (file change, commit, push, PR) are still
+            // missing, and one "continue" is not enough to break the habit.
+            // Push the run forward several times; after the budget the run
+            // ends with whatever the model said. If the same gap survives a
+            // nudge the message escalates: inspection tools are explicitly
+            // ruled out and the model is told to perform the missing step.
+            const MAX_NUDGES = 6;
+            let nudgesUsed = 0;
+            let lastGap: string | null = null;
+            let gapRepeats = 0;
+            const nudgeOnStop = (_content: string): string | null => {
+                if (nudgesUsed >= MAX_NUDGES) {
+                    return null;
+                }
+                const missing = missingWorkflowSteps(prompt, workflow);
+                if (missing.length === 0) {
+                    return null;
+                }
+                nudgesUsed += 1;
+
+                const gap = missing[0]!;
+                gapRepeats = gap === lastGap ? gapRepeats + 1 : 1;
+                lastGap = gap;
+
+                const directive =
+                    nextStepDirective(prompt, workflow, {
+                        repeat: gapRepeats >= 2,
+                    }) ?? "Continue with the available tools now.";
+
+                return (
+                    "Your message ended the run, but the requested task is not finished. Missing: " +
+                    missing.join("; ") +
+                    ". " +
+                    directive +
+                    " Do not reply with prose, plans, or code samples while these steps remain — emit a tool call."
+                );
+            };
 
             const wrappedOnEvent = (event: AgentEventPayload) => {
                 if (event.type === "AGENT_MESSAGE" && event.content) {
@@ -248,6 +294,7 @@ export class Agent {
                 tools,
                 onEvent: wrappedOnEvent,
                 modelFn: this.modelFn,
+                nudgeOnStop,
             };
 
             if (existingSandboxId) {
