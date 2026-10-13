@@ -304,7 +304,7 @@ describe("Agent", () => {
 
     describe("premature-stop continuation", () => {
         const TASK_PROMPT =
-            "Add a Dockerfile to this repository with a production Node.js build, commit it on a new branch called feat/dockerfile, push the branch, and open a pull request against main.";
+            "Add a Dockerfile with a production Node.js build, commit it on a new branch called feat/dockerfile, push the branch, and open a pull request against main.";
 
         it("nudges a prose stop with a concrete tool directive until the budget is spent", async () => {
             mockModelFn = createMockModelFn({
@@ -497,7 +497,7 @@ describe("Agent", () => {
 
         it("stops after create_issue succeeds for the reported failure prompt", async () => {
             const prompt =
-                "create new issue on this repo bro about redisign the UI";
+                "create a new issue about redisign the UI";
             const finalAnswer =
                 "Created issue #10: Redesign UI — https://github.com/Arav-Menon/klinpi/issues/10";
 
@@ -807,6 +807,191 @@ describe("Agent", () => {
                     .where(eq(schema.repositories.id, repoId));
                 await db.delete(schema.users).where(eq(schema.users.id, userId));
             }
+        });
+    });
+
+    describe("repository pre-flight hard error", () => {
+        const REPO_PROMPT =
+            "Can you deep dive into this repo and explain me the architecture of this repo?";
+        const GATE_USER_ID = `user-gate-${crypto.randomUUID()}`;
+        const GATE_REPO_ID = `repo-gate-${crypto.randomUUID()}`;
+
+        async function insertGateRepository() {
+            const db = getDb();
+            await db
+                .insert(schema.users)
+                .values({
+                    id: GATE_USER_ID,
+                    email: `${GATE_USER_ID}@klinpi.dev`,
+                    name: "Repository Gate User",
+                })
+                .onConflictDoNothing();
+            await db
+                .delete(schema.repositories)
+                .where(eq(schema.repositories.id, GATE_REPO_ID));
+            await db.insert(schema.repositories).values({
+                id: GATE_REPO_ID,
+                userId: GATE_USER_ID,
+                provider: "GITHUB",
+                providerRepoId: `pr-${GATE_REPO_ID}`,
+                owner: "test-org",
+                name: "gate-repo",
+                fullName: "test-org/gate-repo",
+                cloneUrl: "https://github.com/test-org/gate-repo.git",
+                defaultBranch: "main",
+            });
+        }
+
+        afterEach(async () => {
+            const db = getDb();
+            await db.delete(schema.users).where(eq(schema.users.id, GATE_USER_ID));
+        });
+
+        it("rejects a repository-specific prompt before any model call when no repository is linked", async () => {
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                { ...VALID_INPUT, repositoryId: "", prompt: REPO_PROMPT },
+                (e) => events.push(e),
+            );
+
+            expect(vi.mocked(mockModelFn)).not.toHaveBeenCalled();
+            const error = events.find((e) => e.type === "AGENT_ERROR");
+            expect(error).toBeDefined();
+            expect(error!.content).toContain("Repository context required");
+            expect(error!.content).toContain("no linked repository");
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(false);
+
+            // The prompt is still persisted so the conversation history keeps it.
+            const userWrites = (
+                mockMessageService.createMessage as ReturnType<typeof vi.fn>
+            ).mock.calls.filter((call) => (call[0] as { role: string }).role === "USER");
+            expect(userWrites).toHaveLength(1);
+        });
+
+        it("still runs non-repository prompts without a linked repository", async () => {
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                { ...VALID_INPUT, repositoryId: "", prompt: "What tools are available?" },
+                (e) => events.push(e),
+            );
+
+            expect(vi.mocked(mockModelFn)).toHaveBeenCalledTimes(1);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+        });
+
+        it("runs a repository-specific prompt normally when the repository resolves", async () => {
+            await insertGateRepository();
+
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                {
+                    userId: GATE_USER_ID,
+                    sessionId: `session-gate-${crypto.randomUUID()}`,
+                    repositoryId: GATE_REPO_ID,
+                    prompt: REPO_PROMPT,
+                },
+                (e) => events.push(e),
+            );
+
+            expect(vi.mocked(mockModelFn)).toHaveBeenCalledTimes(1);
+            expect(events.some((e) => e.type === "AGENT_COMPLETED")).toBe(true);
+        });
+
+        it("rejects a repository-specific prompt when the linked repository cannot be resolved", async () => {
+            const events: AgentEventPayload[] = [];
+            await agent.run(
+                {
+                    ...VALID_INPUT,
+                    repositoryId: `repo-missing-${crypto.randomUUID()}`,
+                    prompt: REPO_PROMPT,
+                },
+                (e) => events.push(e),
+            );
+
+            expect(vi.mocked(mockModelFn)).not.toHaveBeenCalled();
+            const error = events.find((e) => e.type === "AGENT_ERROR");
+            expect(error).toBeDefined();
+            expect(error!.content).toContain("could not be resolved");
+        });
+    });
+
+    describe("phase timing logs", () => {
+        it("emits phase-tagged timing lines without leaking prompt content", async () => {
+            const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+            const timing: string[] = [];
+            try {
+                await agent.run(VALID_INPUT, () => {});
+                timing.push(
+                    ...logSpy.mock.calls
+                        .map((call) => String(call[0]))
+                        .filter((line) => line.startsWith("[Timing]")),
+                );
+            } finally {
+                logSpy.mockRestore();
+            }
+
+            const hasPhase = (phase: string, ok = "true") =>
+                timing.some(
+                    (line) =>
+                        line.includes(`phase=${phase}`) &&
+                        line.includes(`ok=${ok}`) &&
+                        line.includes(`sessionId=${VALID_INPUT.sessionId}`),
+                );
+
+            expect(hasPhase("repository_preflight")).toBe(true);
+            expect(hasPhase("context_build")).toBe(true);
+            expect(hasPhase("model_request")).toBe(true);
+            expect(hasPhase("run_loop")).toBe(true);
+            expect(hasPhase("final_delivery")).toBe(true);
+
+            for (const line of timing) {
+                expect(line).not.toContain(VALID_INPUT.prompt);
+            }
+        });
+
+        it("marks the failing phase when the model request errors", async () => {
+            const failingModelFn = vi.fn().mockRejectedValue(
+                new Error(
+                    "Model provider request timed out after 120000ms (phase=model_request, model=qwen3:4b, url=http://localhost:11434/v1/chat/completions)",
+                ),
+            ) as unknown as ModelFn;
+            const failingAgent = new Agent({
+                contextBuilder,
+                memoryService: mockMemoryService,
+                messageService: mockMessageService,
+                modelFn: failingModelFn,
+            });
+
+            const events: AgentEventPayload[] = [];
+            const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+            const timing: string[] = [];
+            try {
+                await failingAgent.run(VALID_INPUT, (e) => events.push(e));
+                timing.push(
+                    ...logSpy.mock.calls
+                        .map((call) => String(call[0]))
+                        .filter((line) => line.startsWith("[Timing]")),
+                );
+            } finally {
+                logSpy.mockRestore();
+            }
+            expect(
+                timing.some(
+                    (line) =>
+                        line.includes("phase=model_request") && line.includes("ok=false"),
+                ),
+            ).toBe(true);
+            expect(
+                timing.some(
+                    (line) =>
+                        line.includes("phase=run_loop") && line.includes("ok=false"),
+                ),
+            ).toBe(true);
+
+            const error = events.find((e) => e.type === "AGENT_ERROR");
+            expect(error).toBeDefined();
+            expect(error!.content).toContain("timed out after 120000ms");
+            expect(error!.content).toContain("phase=model_request");
         });
     });
 });
