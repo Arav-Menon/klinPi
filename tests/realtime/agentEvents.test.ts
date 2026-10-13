@@ -489,4 +489,66 @@ describe("AgentSessionManager", () => {
         expect(payload).toEqual({ type: "error", message: "Agent stream failed" });
         expect(socket.send.mock.calls[0][0]).not.toContain("secret");
     });
+
+    it("logs a phase-tagged stream timing line when the stream ends", async () => {
+        const sessionId = uniqueSessionId("stream-timing");
+        const { stream, handlers } = createStream();
+        rpcMock.runAgent.mockReturnValue(stream);
+        const socket = createSocket();
+
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+        const timing: string[] = [];
+        try {
+            const manager = new AgentSessionManager();
+            manager.ClientCall({ userId: "user-1", sessionId, prompt: "p", socket });
+
+            handlers.data({ sessionId, type: 2, content: "step", timestamp: 1, sequence: 0 });
+            await flush();
+            handlers.end();
+            await flush();
+            timing.push(
+                ...logSpy.mock.calls
+                    .map((call) => String(call[0]))
+                    .filter((line) => line.startsWith("[Timing]")),
+            );
+        } finally {
+            logSpy.mockRestore();
+        }
+
+        const line = timing.find((l) => l.includes("phase=stream"));
+        expect(line).toBeDefined();
+        expect(line).toContain(`sessionId=${sessionId}`);
+        expect(line).toContain("ok=true");
+        expect(line).toMatch(/firstEvent=\d+ms/);
+        expect(line).toMatch(/elapsed=\d+ms/);
+    });
+
+    it("marks the stream timing line as failed when the stream errors", async () => {
+        const sessionId = uniqueSessionId("stream-timing-error");
+        const { stream, handlers } = createStream();
+        rpcMock.runAgent.mockReturnValue(stream);
+        const socket = createSocket();
+
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+        const timing: string[] = [];
+        try {
+            const manager = new AgentSessionManager();
+            manager.ClientCall({ userId: "user-1", sessionId, prompt: "p", socket });
+
+            handlers.error(new Error("stream died"));
+            await flush();
+            timing.push(
+                ...logSpy.mock.calls
+                    .map((call) => String(call[0]))
+                    .filter((line) => line.startsWith("[Timing]")),
+            );
+        } finally {
+            logSpy.mockRestore();
+        }
+
+        const line = timing.find((l) => l.includes("phase=stream"));
+        expect(line).toBeDefined();
+        expect(line).toContain(`sessionId=${sessionId}`);
+        expect(line).toContain("ok=false");
+    });
 });
