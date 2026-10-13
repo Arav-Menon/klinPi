@@ -29,6 +29,7 @@ const UPDATABLE_STATES = ["open", "closed"] as const;
 export function createUpdateIssueTool(context: ToolContext): AgentTool {
   return {
     name: "update_issue",
+    githubMutation: true,
     description:
       "Update an existing GitHub issue. Only the fields you provide are changed — omitted fields are left untouched by GitHub. Supported fields: title, body, state ('open' or 'closed'), labels, assignees and milestone. labels/assignees replace the full current set when provided (use an empty array to clear them). The issue number must refer to a real issue, not a pull request.",
 
