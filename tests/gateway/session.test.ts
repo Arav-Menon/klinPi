@@ -16,6 +16,24 @@ function newClient() {
   return request.agent(app);
 }
 
+async function insertRepo(userId: string) {
+  const providerRepoId = `patch-test-${crypto.randomUUID()}`;
+  const [repo] = await db()
+    .insert(repositories)
+    .values({
+      userId,
+      provider: "GITHUB",
+      providerRepoId,
+      owner: "patch-test-owner",
+      name: "patch-test",
+      fullName: "patch-test-owner/patch-test",
+      cloneUrl: `https://github.com/patch-test-owner/patch-test-${providerRepoId}.git`,
+      defaultBranch: "main",
+    })
+    .returning();
+  return repo!;
+}
+
 describe("Session API", () => {
   const owner = newClient();
   const other = newClient();
@@ -82,6 +100,34 @@ describe("Session API", () => {
       expect(res.body).toEqual({ error: "Repository not found" });
     });
 
+    it("persists an owned repositoryId on the created session", async () => {
+      const ownerRow = await db()
+        .select({ id: users.id })
+        .from(users)
+        .where(inArray(users.email, [EMAILS[0]!]))
+        .then((rows) => rows[0]);
+      const repo = await insertRepo(ownerRow!.id);
+
+      const res = await owner
+        .post("/api/v1/sessions")
+        .send({ prompt: "create with repo probe", repositoryId: repo.id });
+      expect(res.status).toBe(201);
+      expect(res.body.session.repositoryId).toBe(repo.id);
+
+      // The freshly created session must be readable with its repository
+      // intact — the create path caches it and clears the recent-list cache.
+      const fetched = await owner.get(`/api/v1/sessions/${res.body.session.id}`);
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.session.repositoryId).toBe(repo.id);
+
+      const recent = await owner.get("/api/v1/sessions/recent");
+      expect(recent.status).toBe(200);
+      const listed = (recent.body.sessions as Array<{ id: string; repositoryId: string | null }>)
+        .find((s) => s.id === res.body.session.id);
+      expect(listed).toBeDefined();
+      expect(listed!.repositoryId).toBe(repo.id);
+    });
+
     it("requires authentication", async () => {
       const res = await request(app).post("/api/v1/sessions").send({ prompt: "hello" });
       expect(res.status).toBe(401);
@@ -89,24 +135,6 @@ describe("Session API", () => {
   });
 
   describe("PATCH /api/v1/sessions/:sessionId", () => {
-    async function insertRepo(userId: string) {
-      const providerRepoId = `patch-test-${crypto.randomUUID()}`;
-      const [repo] = await db()
-        .insert(repositories)
-        .values({
-          userId,
-          provider: "GITHUB",
-          providerRepoId,
-          owner: "patch-test-owner",
-          name: "patch-test",
-          fullName: "patch-test-owner/patch-test",
-          cloneUrl: `https://github.com/patch-test-owner/patch-test-${providerRepoId}.git`,
-          defaultBranch: "main",
-        })
-        .returning();
-      return repo!;
-    }
-
     it("binds a repository exactly once and rejects a second binding", async () => {
       const created = await owner.post("/api/v1/sessions").send({ prompt: "patch bind probe" });
       expect(created.status).toBe(201);
