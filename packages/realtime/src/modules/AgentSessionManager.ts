@@ -161,7 +161,22 @@ export class AgentSessionManager {
             repositoryId: data.repositoryId
         })
 
+        const streamStartedAt = Date.now();
+        let firstEventMs: number | undefined;
+        let streamFailed = false;
+        let timingLogged = false;
+        const logStreamTiming = () => {
+            if (timingLogged) return;
+            timingLogged = true;
+            console.log(
+                `[Timing] sessionId=${data.sessionId ?? "none"} phase=stream elapsed=${Date.now() - streamStartedAt}ms firstEvent=${firstEventMs ?? -1}ms ok=${!streamFailed}`,
+            );
+        };
+
         stream.on("data", (event: any) => {
+            if (firstEventMs === undefined) {
+                firstEventMs = Date.now() - streamStartedAt;
+            }
             const sessionId = event.sessionId || data.sessionId || "";
             const envelope = buildAgentEnvelope(event, data.userId, data.sessionId);
             sessionRouter.publish(sessionId, envelope).catch((error) => {
@@ -170,10 +185,13 @@ export class AgentSessionManager {
         });
 
         stream.on("end", () => {
+            logStreamTiming();
             console.log(`Agent stream ended for session ${data.sessionId}`);
         });
 
         stream.on("error", (error: any) => {
+            streamFailed = true;
+            logStreamTiming();
             console.error("Stream error:", error);
             safeSend(data.socket, JSON.stringify({ type: "error", message: "Agent stream failed" }));
         });
