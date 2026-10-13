@@ -41,6 +41,7 @@ import { createGitPushTool } from "../../packages/runtime/src/tools/git_tools/gi
 import { run_command } from "../../packages/runtime/src/tools/run_command.js";
 import type { ToolContext } from "../../packages/runtime/src/types.js";
 import { createRunWorkflowState } from "../../packages/runtime/src/lib/workflowState.js";
+import { SHELL_COMMAND_TIMEOUT_MS } from "../../packages/runtime/src/tools/git_tools/git_helpers.js";
 
 const TOKEN = "gho_SuperSecretToken123abcDEF";
 const REPO_CHECK = /test -d \/workspace\/\.git/;
@@ -113,9 +114,7 @@ describe("git tools", () => {
             const result = await git_branch.execute({ branch: "feat/x" }, "sbx-1");
 
             expect(String(result)).toContain("Created and switched to branch 'feat/x'");
-            expect(run).toHaveBeenCalledWith("git checkout -b 'feat/x'", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git checkout -b 'feat/x'", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("switches to an existing branch when create is false", async () => {
@@ -131,9 +130,7 @@ describe("git tools", () => {
             );
 
             expect(String(result)).toContain("Switched to branch 'fix/y'");
-            expect(run).toHaveBeenCalledWith("git checkout 'fix/y'", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git checkout 'fix/y'", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("suggests create=false when the branch already exists", async () => {
@@ -178,9 +175,7 @@ describe("git tools", () => {
 
             expect(String(result)).toContain("## main");
             expect(String(result)).toContain("M src/app.ts");
-            expect(run).toHaveBeenCalledWith("git status --porcelain=v1 --branch", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git status --porcelain=v1 --branch", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("reports a clean working tree", async () => {
@@ -204,7 +199,7 @@ describe("git tools", () => {
             const result = await git_diff.execute({}, "sbx-1");
 
             expect(String(result)).toContain("+hello");
-            expect(run).toHaveBeenCalledWith("git diff HEAD", { cwd: "/workspace" });
+            expect(run).toHaveBeenCalledWith("git diff HEAD", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("diffs staged changes when staged=true", async () => {
@@ -216,9 +211,7 @@ describe("git tools", () => {
             const result = await git_diff.execute({ staged: true }, "sbx-1");
 
             expect(String(result)).toContain("+staged");
-            expect(run).toHaveBeenCalledWith("git diff --cached", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git diff --cached", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("reports when there are no changes", async () => {
@@ -246,9 +239,7 @@ describe("git tools", () => {
             );
 
             expect(String(result)).toContain("Staged: src/app.ts, .");
-            expect(run).toHaveBeenCalledWith("git add -- 'src/app.ts' '.'", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git add -- 'src/app.ts' '.'", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("shell-quotes paths containing quotes", async () => {
@@ -260,9 +251,7 @@ describe("git tools", () => {
 
             await git_stage.execute({ paths: ["don't.txt"] }, "sbx-1");
 
-            expect(run).toHaveBeenCalledWith(`git add -- 'don'\\''t.txt'`, {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith(`git add -- 'don'\\''t.txt'`, { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("rejects an empty paths array", async () => {
@@ -282,9 +271,7 @@ describe("git tools", () => {
                 "sbx-1",
             );
 
-            expect(run).toHaveBeenCalledWith("git add -- 'user_auth.py'", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git add -- 'user_auth.py'", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
             expect(String(result)).toContain("Staged: user_auth.py");
         });
     });
@@ -339,9 +326,7 @@ describe("git tools", () => {
 
             expect(String(result)).toContain("Created commit abc1234def567890");
             expect(String(result)).toContain("Push the branch with git_push");
-            expect(run).toHaveBeenCalledWith("git commit -m 'feat: add docs'", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("git commit -m 'feat: add docs'", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("rejects an empty message", async () => {
@@ -579,7 +564,7 @@ describe("git tools", () => {
 
             expect(String(result)).toContain("Exit code: 0");
             expect(String(result)).toContain("PASS");
-            expect(run).toHaveBeenCalledWith("npm test", { cwd: "/workspace" });
+            expect(run).toHaveBeenCalledWith("npm test", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("resolves relative cwd against /workspace", async () => {
@@ -590,9 +575,7 @@ describe("git tools", () => {
                 "sbx-1",
             );
 
-            expect(run).toHaveBeenCalledWith("tsc --noEmit", {
-                cwd: "/workspace/packages/runtime",
-            });
+            expect(run).toHaveBeenCalledWith("tsc --noEmit", { cwd: "/workspace/packages/runtime", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("scrubs credential patterns from command output", async () => {
@@ -679,9 +662,7 @@ describe("git tools", () => {
             );
 
             expect(String(result)).toContain("Exit code: 0");
-            expect(run).toHaveBeenCalledWith("npm test > /tmp/test-output.log 2>&1", {
-                cwd: "/workspace",
-            });
+            expect(run).toHaveBeenCalledWith("npm test > /tmp/test-output.log 2>&1", { cwd: "/workspace", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("resolves relative redirect targets against the command cwd", async () => {
@@ -700,7 +681,7 @@ describe("git tools", () => {
                 { command: "echo hi > build.log", cwd: "/tmp" },
                 "sbx-1",
             );
-            expect(tmpRun).toHaveBeenCalledWith("echo hi > build.log", { cwd: "/tmp" });
+            expect(tmpRun).toHaveBeenCalledWith("echo hi > build.log", { cwd: "/tmp", timeoutMs: SHELL_COMMAND_TIMEOUT_MS });
         });
 
         it("does not treat a '>' inside a commit message as a file write", async () => {
