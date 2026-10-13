@@ -2,6 +2,19 @@ export interface AgentTool {
     name: string;
     description: string;
     requiresSandbox?: boolean;
+    /**
+     * Maximum execution time in milliseconds before the loop abandons the
+     * call and reports a timeout to the model. Defaults to
+     * `DEFAULT_TOOL_TIMEOUT_MS` in loop.ts.
+     */
+    timeoutMs?: number;
+    /**
+     * True for tools that mutate state on GitHub's side (issues, PRs).
+     * The loop refuses to execute these while the run is still recovering
+     * from a failed tool call: a failure is resolved with a corrected or
+     * same-objective action, never with an unrelated external mutation.
+     */
+    githubMutation?: boolean;
 
     parameters: {
         type: "object";
