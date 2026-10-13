@@ -1,341 +1,416 @@
 import type {
-    AgentRunInput,
-    AgentEventCallback,
-    AgentEventPayload,
-    ModelFn,
+  AgentRunInput,
+  AgentEventCallback,
+  AgentEventPayload,
+  ModelFn,
 } from "./types.js";
 import { ContextBuilder } from "./state/context.js";
 import type { MemoryService } from "./state/memory.js";
 import { MessageService } from "./state/message.js";
 import { getTools } from "./tools/index.js";
 import {
-    createRunWorkflowState,
-    missingWorkflowSteps,
-    nextStepDirective,
+  createRunWorkflowState,
+  missingWorkflowSteps,
+  nextStepDirective,
 } from "./lib/workflowState.js";
 import { runLoop } from "./loop.js";
 import { callModelWithTools } from "./model.js";
+import { promptRequiresRepositoryFiles } from "./lib/repositoryGate.js";
 import { SYSTEM_PROMPT } from "./lib/system-prompt.js";
 import { sessionSandboxService } from "./sandbox/sessionSandboxService.js";
 import { getDb, schema } from "@klinpi/db";
 import { eq } from "drizzle-orm";
 
 export interface AgentConfig {
-    contextBuilder: ContextBuilder;
-    memoryService: MemoryService;
-    messageService: MessageService;
-    systemInstructions?: string;
-    modelFn?: ModelFn;
+  contextBuilder: ContextBuilder;
+  memoryService: MemoryService;
+  messageService: MessageService;
+  systemInstructions?: string;
+  modelFn?: ModelFn;
 }
 
 export class Agent {
-    private readonly contextBuilder: ContextBuilder;
-    private readonly memoryService: MemoryService;
-    private readonly messageService: MessageService;
-    private readonly systemInstructions: string;
-    private readonly modelFn: ModelFn;
+  private readonly contextBuilder: ContextBuilder;
+  private readonly memoryService: MemoryService;
+  private readonly messageService: MessageService;
+  private readonly systemInstructions: string;
+  private readonly modelFn: ModelFn;
 
-    constructor(config: AgentConfig) {
-        this.contextBuilder = config.contextBuilder;
-        this.memoryService = config.memoryService;
-        this.messageService = config.messageService;
-        this.systemInstructions = config.systemInstructions ?? SYSTEM_PROMPT;
-        this.modelFn = config.modelFn ?? callModelWithTools;
+  constructor(config: AgentConfig) {
+    this.contextBuilder = config.contextBuilder;
+    this.memoryService = config.memoryService;
+    this.messageService = config.messageService;
+    this.systemInstructions = config.systemInstructions ?? SYSTEM_PROMPT;
+    this.modelFn = config.modelFn ?? callModelWithTools;
+  }
+
+  async run(input: AgentRunInput, onEvent: AgentEventCallback): Promise<void> {
+    const { userId, sessionId, repositoryId, prompt } = input;
+
+    let sequence = 0;
+    const emit = (event: AgentEventPayload) => {
+      onEvent({
+        ...event,
+        sessionId,
+        timestamp: Date.now(),
+        sequence: sequence++,
+      });
+    };
+
+    const missingField = (() => {
+      switch (true) {
+        case !userId:
+          return "userId";
+        case !sessionId:
+          return "sessionId";
+        case !prompt:
+          return "prompt";
+        default:
+          return null;
+      }
+    })();
+
+    if (missingField) {
+      emit({
+        type: "AGENT_ERROR",
+        content: `${missingField} is required`,
+      });
+      return;
     }
 
-    async run(
-        input: AgentRunInput,
-        onEvent: AgentEventCallback,
-    ): Promise<void> {
-        const { userId, sessionId, repositoryId, prompt } = input;
+    try {
+      emit({ type: "AGENT_STATUS", content: "Starting agent run" });
 
-        let sequence = 0;
-        const emit = (event: AgentEventPayload) => {
-            onEvent({
-                ...event,
-                sessionId,
-                timestamp: Date.now(),
-                sequence: sequence++,
-            });
-        };
+      const recentMessages = await this.messageService.getMessages(sessionId, {
+        limit: 20,
+      });
 
-        const missingField = (() => {
-            switch (true) {
-                case !userId:
-                    return "userId";
-                case !sessionId:
-                    return "sessionId";
-                case !prompt:
-                    return "prompt";
-                default:
-                    return null;
-            }
-        })();
+      // The gateway persists the USER prompt when a session is created
+      // over HTTP; skip re-inserting an identical trailing prompt (the
+      // WS auto-create path still inserts here).
+      const lastMessage = recentMessages[recentMessages.length - 1];
+      const promptAlreadyPersisted =
+        lastMessage !== undefined &&
+        lastMessage.role === "USER" &&
+        lastMessage.content === prompt;
 
-        if (missingField) {
-            emit({
-                type: "AGENT_ERROR",
-                content: `${missingField} is required`,
-            });
-            return;
+      if (!promptAlreadyPersisted) {
+        await this.messageService.createMessage({
+          sessionId,
+          role: "USER",
+          content: prompt,
+        });
+      }
+
+      // Repository pre-flight: a prompt that needs repository files must
+      // resolve a linked repository BEFORE any model call — fail fast with
+      // a clear error instead of burning a full round-trip just for the
+      // model to explain the missing context.
+      const preflightStartedAt = Date.now();
+      const requiresRepository = promptRequiresRepositoryFiles(prompt);
+      if (requiresRepository && !repositoryId) {
+        console.log(
+          `[Timing] sessionId=${sessionId} phase=repository_preflight elapsed=${Date.now() - preflightStartedAt}ms ok=false`,
+        );
+        throw new Error(
+          "Repository context required: this session has no linked repository. Connect a repository to the session, then retry.",
+        );
+      }
+
+      let memories: Awaited<
+        ReturnType<typeof this.memoryService.retrieveRelevant>
+      > = [];
+      try {
+        memories = await this.memoryService.retrieveRelevant({
+          userId,
+          repositoryId: repositoryId || null,
+          query: prompt,
+        });
+      } catch (err) {
+        console.warn(
+          "Memory retrieval failed, continuing without memories:",
+          err,
+        );
+      }
+
+      let repositoryCloneUrl: string | undefined;
+      let repositoryDefaultBranch: string | undefined;
+      let repositoryFullName: string | undefined;
+      if (repositoryId) {
+        const db = getDb();
+        const [repo] = await db
+          .select()
+          .from(schema.repositories)
+          .where(eq(schema.repositories.id, repositoryId))
+          .limit(1);
+        if (repo) {
+          repositoryCloneUrl = repo.cloneUrl;
+          repositoryDefaultBranch = repo.defaultBranch;
+          repositoryFullName = repo.fullName;
+        } else if (requiresRepository) {
+          console.log(
+            `[Timing] sessionId=${sessionId} phase=repository_preflight elapsed=${Date.now() - preflightStartedAt}ms ok=false`,
+          );
+          throw new Error(
+            `Repository context required: linked repository ${repositoryId} could not be resolved. Re-link the repository, then retry.`,
+          );
+        } else {
+          console.warn(
+            `[AgentPipeline] sessionId=${sessionId} repositoryId=${repositoryId} not found in Repository table — running without repository context`,
+          );
         }
+      }
 
-        try {
-            emit({ type: "AGENT_STATUS", content: "Starting agent run" });
+      console.log(
+        `[Timing] sessionId=${sessionId} phase=repository_preflight elapsed=${Date.now() - preflightStartedAt}ms ok=true`,
+      );
 
-            const recentMessages = await this.messageService.getMessages(
-                sessionId,
-                { limit: 20 },
-            );
+      console.log(
+        `[AgentPipeline] sessionId=${sessionId} userId=${userId} repositoryId=${repositoryId ?? "none"} repository=${repositoryFullName ?? "none"} branch=${repositoryDefaultBranch ?? "none"} cloneUrl=${repositoryCloneUrl ?? "none"}`,
+      );
 
-            // The gateway persists the USER prompt when a session is created
-            // over HTTP; skip re-inserting an identical trailing prompt (the
-            // WS auto-create path still inserts here).
-            const lastMessage = recentMessages[recentMessages.length - 1];
-            const promptAlreadyPersisted =
-                lastMessage !== undefined &&
-                lastMessage.role === "USER" &&
-                lastMessage.content === prompt;
+      // Sandbox lifecycle is runtime-owned for every session: reuse an
+      // existing one, and lazily create on the first sandbox-dependent
+      // tool (cloning the linked repository when one exists, otherwise
+      // preparing an empty workspace). When an existing sandbox is
+      // reused, the linked repository is prepared eagerly so the model
+      // always reasons over a workspace that matches the session.
+      let existingSandboxId: string | undefined;
+      try {
+        existingSandboxId =
+          (await sessionSandboxService.refresh(sessionId)) ?? undefined;
+      } catch (error) {
+        console.warn(
+          "Sandbox refresh failed, continuing without an existing sandbox:",
+          error,
+        );
+      }
 
-            if (!promptAlreadyPersisted) {
-                await this.messageService.createMessage({
-                    sessionId,
-                    role: "USER",
-                    content: prompt,
-                });
-            }
-
-            let memories: Awaited<ReturnType<typeof this.memoryService.retrieveRelevant>> = [];
-            try {
-                memories = await this.memoryService.retrieveRelevant({
-                    userId,
-                    repositoryId: repositoryId || null,
-                    query: prompt,
-                });
-            } catch (err) {
-                console.warn("Memory retrieval failed, continuing without memories:", err);
-            }
-
-            let repositoryCloneUrl: string | undefined;
-            let repositoryDefaultBranch: string | undefined;
-            let repositoryFullName: string | undefined;
-            if (repositoryId) {
-                const db = getDb();
-                const [repo] = await db
-                    .select()
-                    .from(schema.repositories)
-                    .where(eq(schema.repositories.id, repositoryId))
-                    .limit(1);
-                if (repo) {
-                    repositoryCloneUrl = repo.cloneUrl;
-                    repositoryDefaultBranch = repo.defaultBranch;
-                    repositoryFullName = repo.fullName;
-                } else {
-                    console.warn(
-                        `[AgentPipeline] sessionId=${sessionId} repositoryId=${repositoryId} not found in Repository table — running without repository context`,
-                    );
-                }
-            }
-
-            console.log(
-                `[AgentPipeline] sessionId=${sessionId} userId=${userId} repositoryId=${repositoryId ?? "none"} repository=${repositoryFullName ?? "none"} branch=${repositoryDefaultBranch ?? "none"} cloneUrl=${repositoryCloneUrl ?? "none"}`,
-            );
-
-            // Sandbox lifecycle is runtime-owned for every session: reuse an
-            // existing one, and lazily create on the first sandbox-dependent
-            // tool (cloning the linked repository when one exists, otherwise
-            // preparing an empty workspace). When an existing sandbox is
-            // reused, the linked repository is prepared eagerly so the model
-            // always reasons over a workspace that matches the session.
-            let existingSandboxId: string | undefined;
-            try {
-                existingSandboxId =
-                    (await sessionSandboxService.refresh(sessionId)) ?? undefined;
-            } catch (error) {
-                console.warn(
-                    "Sandbox refresh failed, continuing without an existing sandbox:",
-                    error,
-                );
-            }
-
-            let workspaceReady = false;
-            let prepareFailure: string | undefined;
-            if (existingSandboxId) {
-                emit({
-                    type: "AGENT_STATUS",
-                    content: `Existing sandbox found — lifetime extended (30 min): ${existingSandboxId}`,
-                });
-                if (repositoryCloneUrl) {
-                    try {
-                        await sessionSandboxService.prepareRepository({
-                            sessionId,
-                            sandboxId: existingSandboxId,
-                            userId,
-                            ...(repositoryId ? { repositoryId } : {}),
-                            cloneUrl: repositoryCloneUrl,
-                            branch: repositoryDefaultBranch ?? "main",
-                            onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
-                        });
-                        workspaceReady = true;
-                    } catch (error) {
-                        prepareFailure = (
-                            error instanceof Error ? error.message : String(error)
-                        ).slice(0, 300);
-                        console.error(
-                            `[AgentPipeline] sessionId=${sessionId} repositoryId=${repositoryId ?? "none"} repository prepare failed: ${prepareFailure}`,
-                        );
-                        emit({
-                            type: "AGENT_STATUS",
-                            content: `Repository preparation failed: ${prepareFailure}`,
-                        });
-                    }
-                }
-            }
-
-            const workspaceLine = !repositoryCloneUrl
-                ? undefined
-                : workspaceReady
-                  ? "- Workspace: /workspace inside this session's sandbox — the repository is already cloned there; inspect it with list_files / read_file"
-                  : prepareFailure
-                    ? `- Workspace: /workspace inside this session's sandbox — repository preparation failed (${prepareFailure}); the workspace may be empty`
-                    : "- Workspace: /workspace inside this session's sandbox — the runtime clones the repository there automatically the first time you call a repository tool";
-
-            const repositoryContext =
-                repositoryCloneUrl && repositoryFullName && workspaceLine
-                    ? [
-                          `- Repository: ${repositoryFullName}`,
-                          `- Default branch: ${repositoryDefaultBranch ?? "main"}`,
-                          `- Clone source: ${repositoryCloneUrl}`,
-                          workspaceLine,
-                          "",
-                          "A repository IS linked to this session. Questions about \"this project\" or \"this repository\" are repository tasks: inspect the actual files with list_files and read_file (start at /workspace) and answer from what you find. Never claim you have no access to repository or project context when this block is present. You do not need to ask the user which repository to use — it is stated above.",
-                      ].join("\n")
-                    : undefined;
-
-            const context = this.contextBuilder.build({
-                systemInstructions: this.systemInstructions,
-                currentPrompt: prompt,
-                recentMessages: recentMessages.map((m) => ({
-                    role: m.role.toLowerCase(),
-                    content: m.content,
-                })),
-                memories,
-                ...(repositoryContext ? { repositoryContext } : {}),
+      let workspaceReady = false;
+      let prepareFailure: string | undefined;
+      if (existingSandboxId) {
+        emit({
+          type: "AGENT_STATUS",
+          content: `Existing sandbox found — lifetime extended (30 min): ${existingSandboxId}`,
+        });
+        if (repositoryCloneUrl) {
+          try {
+            await sessionSandboxService.prepareRepository({
+              sessionId,
+              sandboxId: existingSandboxId,
+              userId,
+              ...(repositoryId ? { repositoryId } : {}),
+              cloneUrl: repositoryCloneUrl,
+              branch: repositoryDefaultBranch ?? "main",
+              onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
             });
-
-            const workflow = createRunWorkflowState();
-            const tools = getTools({
-                memoryService: this.memoryService,
-                userId,
-                sessionId,
-                repositoryId: repositoryId || null,
-                workflow,
-            });
-
-            // Bounded continuation: local models often answer in prose while
-            // requested steps (file change, commit, push, PR) are still
-            // missing, and one "continue" is not enough to break the habit.
-            // Push the run forward several times; after the budget the run
-            // ends with whatever the model said. If the same gap survives a
-            // nudge the message escalates: inspection tools are explicitly
-            // ruled out and the model is told to perform the missing step.
-            const MAX_NUDGES = 6;
-            let nudgesUsed = 0;
-            let lastGap: string | null = null;
-            let gapRepeats = 0;
-            const nudgeOnStop = (_content: string): string | null => {
-                if (nudgesUsed >= MAX_NUDGES) {
-                    return null;
-                }
-                const missing = missingWorkflowSteps(prompt, workflow);
-                if (missing.length === 0) {
-                    return null;
-                }
-                nudgesUsed += 1;
-
-                const gap = missing[0]!;
-                gapRepeats = gap === lastGap ? gapRepeats + 1 : 1;
-                lastGap = gap;
-
-                const directive =
-                    nextStepDirective(prompt, workflow, {
-                        repeat: gapRepeats >= 2,
-                    }) ?? "Continue with the available tools now.";
-
-                return (
-                    "Your message ended the run, but the requested task is not finished. Missing: " +
-                    missing.join("; ") +
-                    ". " +
-                    directive +
-                    " Do not reply with prose, plans, or code samples while these steps remain — emit a tool call."
-                );
-            };
-
-            const wrappedOnEvent = (event: AgentEventPayload) => {
-                if (event.type === "AGENT_MESSAGE" && event.content) {
-                    this.messageService
-                        .createMessage({
-                            sessionId,
-                            role: "ASSISTANT",
-                            content: event.content,
-                        })
-                        .catch((err) => {
-                            console.error(
-                                "Failed to persist assistant message:",
-                                err,
-                            );
-                        });
-                }
-                emit(event);
-            };
-
-            const loopInput: import("./loop.js").LoopInput = {
-                messages: context.messages,
-                tools,
-                onEvent: wrappedOnEvent,
-                modelFn: this.modelFn,
-                nudgeOnStop,
-            };
-
-            if (existingSandboxId) {
-                loopInput.initialSandboxId = existingSandboxId;
-                if (repositoryCloneUrl) {
-                    loopInput.prepareSandbox = async () =>
-                        sessionSandboxService.prepareRepository({
-                            sessionId,
-                            sandboxId: existingSandboxId,
-                            userId,
-                            ...(repositoryId ? { repositoryId } : {}),
-                            cloneUrl: repositoryCloneUrl!,
-                            branch: repositoryDefaultBranch ?? "main",
-                            onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
-                        });
-                }
-            }
-
-            const cloneUrl = repositoryCloneUrl;
-            loopInput.createSandbox = async () =>
-                sessionSandboxService.ensure({
-                    sessionId,
-                    userId,
-                    ...(repositoryId ? { repositoryId } : {}),
-                    ...(cloneUrl
-                        ? { cloneUrl, branch: repositoryDefaultBranch ?? "main" }
-                        : {}),
-                    onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
-                });
-
-            await runLoop(loopInput);
-
-            emit({ type: "AGENT_COMPLETED" });
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+            workspaceReady = true;
+          } catch (error) {
+            prepareFailure = (
+              error instanceof Error ? error.message : String(error)
+            ).slice(0, 300);
             console.error(
-                `Agent run failed [sessionId=${sessionId}, userId=${userId}, repositoryId=${repositoryId}]:`,
-                message,
+              `[AgentPipeline] sessionId=${sessionId} repositoryId=${repositoryId ?? "none"} repository prepare failed: ${prepareFailure}`,
             );
-            emit({ type: "AGENT_ERROR", content: message });
+            emit({
+              type: "AGENT_STATUS",
+              content: `Repository preparation failed: ${prepareFailure}`,
+            });
+          }
         }
+      }
+
+      const workspaceLine = !repositoryCloneUrl
+        ? undefined
+        : workspaceReady
+          ? "- Workspace: /workspace inside this session's sandbox — the repository is already cloned there; inspect it with list_files / read_file"
+          : prepareFailure
+            ? `- Workspace: /workspace inside this session's sandbox — repository preparation failed (${prepareFailure}); the workspace may be empty`
+            : "- Workspace: /workspace inside this session's sandbox — the runtime clones the repository there automatically the first time you call a repository tool";
+
+      const repositoryContext =
+        repositoryCloneUrl && repositoryFullName && workspaceLine
+          ? [
+              `- Repository: ${repositoryFullName}`,
+              `- Default branch: ${repositoryDefaultBranch ?? "main"}`,
+              `- Clone source: ${repositoryCloneUrl}`,
+              workspaceLine,
+              "",
+              'A repository IS linked to this session. Questions about "this project" or "this repository" are repository tasks: inspect the actual files with list_files and read_file (start at /workspace) and answer from what you find. Never claim you have no access to repository or project context when this block is present. You do not need to ask the user which repository to use — it is stated above.',
+            ].join("\n")
+          : undefined;
+
+      const repositoryNote = repositoryContext
+        ? undefined
+        : [
+            "Session repository status: no repository is linked to this session,",
+            "so the sandbox workspace starts empty. clone_repo can clone a repository",
+            'if the user provides a URL. If the user asks to inspect or modify "this',
+            'repository", "this repo", or "this project", say plainly that no repository',
+            "is connected to the session and ask them to connect one — never invent a",
+            "file list, never fabricate file contents, and never claim the repository",
+            "tools themselves are unavailable.",
+          ].join(" ");
+
+      const workflow = createRunWorkflowState();
+      const tools = getTools({
+        memoryService: this.memoryService,
+        userId,
+        sessionId,
+        repositoryId: repositoryId || null,
+        workflow,
+      });
+
+      const contextBuildStartedAt = Date.now();
+      const context = this.contextBuilder.build({
+        systemInstructions: this.systemInstructions,
+        currentPrompt: prompt,
+        recentMessages: recentMessages.map((m) => ({
+          role: m.role.toLowerCase(),
+          content: m.content,
+        })),
+        memories,
+        availableTools: tools,
+        ...(repositoryContext ? { repositoryContext } : {}),
+        ...(repositoryNote ? { repositoryNote } : {}),
+      });
+      console.log(
+        `[Timing] sessionId=${sessionId} phase=context_build elapsed=${Date.now() - contextBuildStartedAt}ms ok=true`,
+      );
+
+      // Bounded continuation: local models often answer in prose while
+      // requested steps (file change, commit, push, PR) are still
+      // missing, and one "continue" is not enough to break the habit.
+      // Push the run forward several times; after the budget the run
+      // ends with whatever the model said. If the same gap survives a
+      // nudge the message escalates: inspection tools are explicitly
+      // ruled out and the model is told to perform the missing step.
+      const MAX_NUDGES = 6;
+      let nudgesUsed = 0;
+      let lastGap: string | null = null;
+      let gapRepeats = 0;
+      const nudgeOnStop = (_content: string): string | null => {
+        if (nudgesUsed >= MAX_NUDGES) {
+          return null;
+        }
+        const missing = missingWorkflowSteps(prompt, workflow);
+        if (missing.length === 0) {
+          return null;
+        }
+        nudgesUsed += 1;
+
+        const gap = missing[0]!;
+        gapRepeats = gap === lastGap ? gapRepeats + 1 : 1;
+        lastGap = gap;
+
+        const directive =
+          nextStepDirective(prompt, workflow, {
+            repeat: gapRepeats >= 2,
+          }) ?? "Continue with the available tools now.";
+
+        return (
+          "Your message ended the run, but the requested task is not finished. Missing: " +
+          missing.join("; ") +
+          ". " +
+          directive +
+          " Do not reply with prose, plans, or code samples while these steps remain — emit a tool call."
+        );
+      };
+
+      const wrappedOnEvent = (event: AgentEventPayload) => {
+        if (event.type === "AGENT_MESSAGE" && event.content) {
+          this.messageService
+            .createMessage({
+              sessionId,
+              role: "ASSISTANT",
+              content: event.content,
+            })
+            .catch((err) => {
+              console.error("Failed to persist assistant message:", err);
+            });
+        }
+        emit(event);
+      };
+
+      // Per-request model timing: one line per model round-trip, tagged
+      // with the session so a slow run can be attributed to a phase.
+      const timedModelFn: ModelFn = async (messages, tools) => {
+        const modelStartedAt = Date.now();
+        try {
+          const response = await this.modelFn(messages, tools);
+          console.log(
+            `[Timing] sessionId=${sessionId} phase=model_request elapsed=${Date.now() - modelStartedAt}ms ok=true`,
+          );
+          return response;
+        } catch (error) {
+          console.log(
+            `[Timing] sessionId=${sessionId} phase=model_request elapsed=${Date.now() - modelStartedAt}ms ok=false`,
+          );
+          throw error;
+        }
+      };
+
+      const loopInput: import("./loop.js").LoopInput = {
+        messages: context.messages,
+        tools,
+        onEvent: wrappedOnEvent,
+        modelFn: timedModelFn,
+        sessionId,
+        nudgeOnStop,
+      };
+
+      if (existingSandboxId) {
+        loopInput.initialSandboxId = existingSandboxId;
+        if (repositoryCloneUrl) {
+          loopInput.prepareSandbox = async () =>
+            sessionSandboxService.prepareRepository({
+              sessionId,
+              sandboxId: existingSandboxId,
+              userId,
+              ...(repositoryId ? { repositoryId } : {}),
+              cloneUrl: repositoryCloneUrl!,
+              branch: repositoryDefaultBranch ?? "main",
+              onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
+            });
+        }
+      }
+
+      const cloneUrl = repositoryCloneUrl;
+      loopInput.createSandbox = async () =>
+        sessionSandboxService.ensure({
+          sessionId,
+          userId,
+          ...(repositoryId ? { repositoryId } : {}),
+          ...(cloneUrl
+            ? { cloneUrl, branch: repositoryDefaultBranch ?? "main" }
+            : {}),
+          onStatus: (content) => emit({ type: "AGENT_STATUS", content }),
+        });
+
+      const runLoopStartedAt = Date.now();
+      try {
+        await runLoop(loopInput);
+        console.log(
+          `[Timing] sessionId=${sessionId} phase=run_loop elapsed=${Date.now() - runLoopStartedAt}ms ok=true`,
+        );
+      } catch (loopError) {
+        console.log(
+          `[Timing] sessionId=${sessionId} phase=run_loop elapsed=${Date.now() - runLoopStartedAt}ms ok=false`,
+        );
+        throw loopError;
+      }
+
+      emit({ type: "AGENT_COMPLETED" });
+      console.log(
+        `[Timing] sessionId=${sessionId} phase=final_delivery elapsed=${Date.now() - runLoopStartedAt}ms ok=true`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `Agent run failed [sessionId=${sessionId}, userId=${userId}, repositoryId=${repositoryId}]:`,
+        message,
+      );
+      emit({ type: "AGENT_ERROR", content: message });
     }
+  }
 }
