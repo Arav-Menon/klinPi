@@ -165,6 +165,9 @@ function findWorkspaceWrites(command: string, cwd: string): string[] {
 export const run_command: AgentTool = {
   name: "run_command",
   requiresSandbox: true,
+  // Builds and test suites legitimately run for minutes; the loop-level
+  // budget matches the E2B command timeout passed by runShell.
+  timeoutMs: 600_000,
   description:
     "Run a shell command inside the sandbox (default working directory /workspace). Use this for validation — tests, type checking, linting, formatting, builds. For reading file contents prefer read_file and for listing directories prefer list_files instead of cat/ls. For Git operations prefer the dedicated git_branch, git_status, git_diff, git_stage, git_commit and git_push tools. Creating or modifying repository files must go through read_file → edit_file: redirections into /workspace ('> file', '>> file', tee, sed -i) are refused by this tool. Output is truncated to a safe length.",
 
