@@ -2,6 +2,12 @@ import { sandboxManger } from "@klinpi/compute";
 
 export const WORKSPACE_PATH = "/workspace";
 export const OUTPUT_LIMIT = 10000;
+/**
+ * E2B's own per-command timeout (its default is 60s, too short for real
+ * builds/test suites). Kept in sync with run_command's loop-level budget;
+ * for other tools the loop timeout (120s) still fires first.
+ */
+export const SHELL_COMMAND_TIMEOUT_MS = 600_000;
 
 export interface ShellResult {
     exitCode: number;
@@ -73,7 +79,10 @@ export async function runShell(
     }
     const sandbox = await sandboxManger.connectSbx(sandboxId);
     try {
-        const result = await sandbox.commands.run(command, { cwd });
+        const result = await sandbox.commands.run(command, {
+            cwd,
+            timeoutMs: SHELL_COMMAND_TIMEOUT_MS,
+        });
         return {
             exitCode: result.exitCode,
             stdout: result.stdout ?? "",
