@@ -27,15 +27,26 @@ export function createReadFileTool(context: ToolContext): AgentTool {
             if (!sandboxId) {
                 return "Error: No sandbox available. The agent has not initialized a sandbox yet.";
             }
+            // Repository files live under /workspace, but E2B resolves a
+            // relative path against the sandbox default cwd (/home/user),
+            // which never contains them. Resolve relative paths against the
+            // repository root so a natural call like path:"readme.md"
+            // reads /workspace/readme.md. Absolute and ~ paths pass through
+            // unchanged; writes (edit_file) stay strict and require an
+            // explicit absolute path.
+            const resolved =
+                path.startsWith("/") || path.startsWith("~")
+                    ? path
+                    : `/workspace/${path.replace(/^\.\//, "")}`;
             try {
-                const content = await readFile(sandboxId, path);
-                workflow.readPaths.add(path);
+                const content = await readFile(sandboxId, resolved);
+                workflow.readPaths.add(resolved);
                 workflow.inspected = true;
                 return content;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                const base = `Error reading file '${path}': ${message}`;
-                const dir = path.slice(0, path.lastIndexOf("/")) || "/";
+                const base = `Error reading file '${resolved}': ${message}`;
+                const dir = resolved.slice(0, resolved.lastIndexOf("/")) || "/";
                 try {
                     const listing = await listDir(sandboxId, dir || "/");
                     return `${base}\nHint: repository root is /workspace — repository files live under /workspace. Contents of ${dir}:\n${listing}`;
