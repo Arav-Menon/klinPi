@@ -30,8 +30,9 @@ export function createUpdateIssueTool(context: ToolContext): AgentTool {
   return {
     name: "update_issue",
     githubMutation: true,
+    capabilities: ["github.update_issue"],
     description:
-      "Update an existing GitHub issue. Only the fields you provide are changed — omitted fields are left untouched by GitHub. Supported fields: title, body, state ('open' or 'closed'), labels, assignees and milestone. labels/assignees replace the full current set when provided (use an empty array to clear them). The issue number must refer to a real issue, not a pull request.",
+      "Update an existing GitHub issue — including REOPENING a closed issue by setting state to 'open' (use this tool, never create_issue, when the user asks to reopen an issue). Only the fields you provide are changed — omitted fields are left untouched by GitHub. Supported fields: title, body, state ('open' or 'closed'), labels, assignees and milestone. labels/assignees replace the full current set when provided (use an empty array to clear them). The issue number must refer to a real issue, not a pull request.",
 
     parameters: {
       type: "object",
