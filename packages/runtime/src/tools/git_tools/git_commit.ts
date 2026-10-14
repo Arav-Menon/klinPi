@@ -19,6 +19,7 @@ export function createGitCommitTool(context: ToolContext): AgentTool {
     return {
         name: "git_commit",
     requiresSandbox: true,
+    capabilities: ["git.local"],
     description:
         "Create a Git commit from already-staged changes in the sandbox repository (/workspace). Stage the intended files with git_stage first — this tool refuses when nothing is staged. Write a meaningful conventional commit message (e.g. 'feat: add FastAPI GET method documentation'); never use placeholder messages like 'changes' or 'update'. Only as part of an explicit change/commit/PR workflow — never for read-only requests.",
 
