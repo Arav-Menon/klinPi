@@ -30,6 +30,7 @@ const SORT_DIRECTIONS = ["asc", "desc"] as const;
 export function createListIssuesTool(context: ToolContext): AgentTool {
   return {
     name: "list_issues",
+    capabilities: ["github.read"],
     description:
       "List issues from a GitHub repository of the authenticated user's connected GitHub account. Returns structured issues (number, title, state, labels, assignees, dates) — pull requests that GitHub's Issues API also returns are excluded and counted separately. Supports filters (state, labels, assignee, milestone, sort) and pagination via page/perPage; check hasMore and request the next page when needed. Read-only — it does not modify the repository, sandbox, or open pull requests.",
 
