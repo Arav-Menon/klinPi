@@ -489,8 +489,18 @@ describe("Agent", () => {
                 role: string;
                 content: string | null;
             }>;
-            const last = followUp[followUp.length - 1]!;
-            expect(last.role).toBe("tool");
+            // The tool result reached the model before the final answer.
+            const toolMessages = followUp.filter((m) => m.role === "tool");
+            expect(toolMessages).toHaveLength(1);
+            // After the authorized creation the budget is consumed, so the
+            // loop appends an availability-update system message (create_issue
+            // is no longer offered).
+            const systemMessages = followUp.filter((m) => m.role === "system");
+            expect(
+                systemMessages.some((m) =>
+                    String(m.content).includes("Tool availability update"),
+                ),
+            ).toBe(true);
             const userMessages = followUp.filter((m) => m.role === "user");
             expect(userMessages).toHaveLength(1);
             expect(userMessages[0]!.content).toBe(prompt);
