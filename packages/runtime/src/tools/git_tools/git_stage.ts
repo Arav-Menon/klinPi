@@ -10,6 +10,7 @@ import {
 export const git_stage: AgentTool = {
     name: "git_stage",
     requiresSandbox: true,
+    capabilities: ["git.local"],
     description:
         "Stage file changes for the next commit (git add) in the sandbox repository (/workspace). ONLY use when the user explicitly asked for changes to be committed or pushed, or a change/PR workflow is already in progress. NEVER use for read-only requests, and never stage merely because files were inspected. Stage only the files you intentionally changed — do not stage '.' blindly.",
 
