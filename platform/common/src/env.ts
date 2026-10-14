@@ -33,3 +33,9 @@ export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:
 export const CHAT_MODEL = process.env.CHAT_MODEL || "qwen3:8b";
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "qwen3-embedding:latest";
 export const EMBEDDING_DIMENSION = Number(process.env.EMBEDDING_DIMENSION ?? 1024);
+
+/** Workspace explorer limits (sandbox file tree / file content API). */
+export const WORKSPACE_MAX_FILE_BYTES = Number(process.env.WORKSPACE_MAX_FILE_BYTES ?? 1024 * 1024);
+export const WORKSPACE_MAX_TREE_ENTRIES = Number(process.env.WORKSPACE_MAX_TREE_ENTRIES ?? 5000);
+export const WORKSPACE_MAX_TREE_DEPTH = Number(process.env.WORKSPACE_MAX_TREE_DEPTH ?? 20);
+export const WORKSPACE_WATCH_DEBOUNCE_MS = Number(process.env.WORKSPACE_WATCH_DEBOUNCE_MS ?? 400);
