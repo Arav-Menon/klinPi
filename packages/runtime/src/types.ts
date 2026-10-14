@@ -1,7 +1,16 @@
+import type { ToolCapability } from "./lib/taskScope.js";
+
 export interface AgentTool {
     name: string;
     description: string;
     requiresSandbox?: boolean;
+    /**
+     * What this tool is capable of doing, used by task-scope filtering and
+     * authorization. Tools without capabilities are treated as available
+     * under every scope (back-compat for ad-hoc/test tools); every tool in
+     * the real registry carries an explicit tag.
+     */
+    capabilities?: readonly ToolCapability[];
     /**
      * Maximum execution time in milliseconds before the loop abandons the
      * call and reports a timeout to the model. Defaults to
