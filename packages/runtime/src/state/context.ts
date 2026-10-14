@@ -15,6 +15,12 @@ export interface ContextBuilderInput {
   availableTools?: Array<{ name: string; description: string }>;
   /** Truthful session note shown when no repository is linked. */
   repositoryNote?: string;
+  /**
+   * One-line description of the authorized task scope for this run.
+   * Rendered into the system message so the model's view of its
+   * permissions matches what the loop will actually authorize.
+   */
+  taskScopeNote?: string;
 }
 
 export interface BuiltContext {
@@ -78,6 +84,10 @@ export class ContextBuilder {
 
     if (input.repositoryNote) {
       systemParts.push(input.repositoryNote);
+    }
+
+    if (input.taskScopeNote) {
+      systemParts.push(input.taskScopeNote);
     }
 
     if (input.memories && input.memories.length > 0) {
