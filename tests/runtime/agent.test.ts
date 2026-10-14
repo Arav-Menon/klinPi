@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { getDb, schema } from "@klinpi/db";
 import { eq } from "drizzle-orm";
 import { Agent } from "../../packages/runtime/src/agent.js";
+import { modelConfig } from "../../packages/runtime/src/lib/modelConfig.js";
 
 const computeMocks = vi.hoisted(() => ({
     connect: vi.fn(),
@@ -952,7 +953,7 @@ describe("Agent", () => {
         it("marks the failing phase when the model request errors", async () => {
             const failingModelFn = vi.fn().mockRejectedValue(
                 new Error(
-                    "Model provider request timed out after 120000ms (phase=model_request, model=qwen3:4b, url=http://localhost:11434/v1/chat/completions)",
+                    `Model provider request timed out after 120000ms (phase=model_request, model=${modelConfig.model}, url=${modelConfig.baseUrl}/v1/chat/completions)`,
                 ),
             ) as unknown as ModelFn;
             const failingAgent = new Agent({
