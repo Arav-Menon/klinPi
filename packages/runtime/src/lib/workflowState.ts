@@ -50,16 +50,16 @@ export function createRunWorkflowState(): RunWorkflowState {
 }
 
 const WRITE_INTENT =
-    /\b(add|create|writ(?:e|es|ten|ing)|implement|fix|updat(?:e|es|ing)|modif(?:y|ies|ied|ying)|chang(?:e|es|ed|ing)|edit(?:s|ed|ing)?|remov(?:e|es|ed|ing)|delet(?:e|es|ed|ing)|refactor(?:s|ed|ing)?|generat(?:e|es|ed|ing))\b/i;
+    /\b(add|create|writ(?:e|es|ten|ing)|implement|improve(?:s|d|ing)?|fix|updat(?:e|es|ing)|modif(?:y|ies|ied|ying)|chang(?:e|es|ed|ing)|edit(?:s|ed|ing)?|remov(?:e|es|ed|ing)|delet(?:e|es|ed|ing)|refactor(?:s|ed|ing)?|generat(?:e|es|ed|ing))\b/i;
 const NEGATED_WRITE =
-    /\b(don'?t|do not|without|no|never)\s+(add|create|write|implement|fix|update|modify|change|edit|remove|delete|refactor|generate)\b/i;
+    /\b(don'?t|do not|without|no|never)\s+(add|create|write|implement|improve|fix|update|modify|change|edit|remove|delete|refactor|generate)\b/i;
 const COMMIT_INTENT = /\bcommit(s|ted|ting)?\b/i;
 const PUSH_INTENT = /\bpush(es|ed|ing)?\b/i;
 const PR_INTENT =
     /\b(pull[- ]request|pullrequest|open (a |an |the )?(pr|pull)|create (a |an |the )?(pr|pull)|pr against)\b/i;
 
 const TASK_WORDS =
-    "add|create|write|implement|fix|update|modify|change|edit|remove|delete|refactor|commit|push|open|merge|generate|restore|revert|rename|move|install|configure|run|test|validate|deploy|build";
+    "add|create|write|implement|improve|fix|update|modify|change|edit|remove|delete|refactor|commit|push|open|merge|generate|restore|revert|rename|move|install|configure|run|test|validate|deploy|build";
 /** Polite or imperative opener: "please …", "can you …", "Add …". */
 const TASK_LEAD = new RegExp(
     `^\\s*(please|pls|kindly|can you|could you|would you|will you|help me|i want|i'd like|let's|go ahead|${TASK_WORDS})\\b`,
@@ -71,7 +71,7 @@ const IMPERATIVE_SENTENCE = new RegExp(
     "i",
 );
 const LEAD_WRITE =
-    /^\s*(add|create|write|implement|fix|update|modify|change|edit|remove|delete|refactor|generate)\b/i;
+    /^\s*(add|create|write|implement|improve|fix|update|modify|change|edit|remove|delete|refactor|generate)\b/i;
 /**
  * The lead write verb targets a GitHub work item rather than repository
  * content: "create an issue…", "delete this issue", "create a branch called
@@ -84,18 +84,18 @@ const LEAD_WORK_ITEM =
 const WORK_ITEM_MENTION =
     /\b(issues?|tickets?|pull requests?|prs?|bugs?|bug reports?|reports?)\b/i;
 
-interface TaskIntents {
+export interface TaskIntents {
     wantsWrite: boolean;
     wantsCommit: boolean;
     wantsPush: boolean;
     wantsPr: boolean;
 }
 
-function isTaskPrompt(text: string): boolean {
+export function isTaskPrompt(text: string): boolean {
     return TASK_LEAD.test(text) || IMPERATIVE_SENTENCE.test(text);
 }
 
-function taskIntents(text: string): TaskIntents {
+export function taskIntents(text: string): TaskIntents {
     const wantsCommit = COMMIT_INTENT.test(text);
     const wantsPush = PUSH_INTENT.test(text);
     const wantsPr = PR_INTENT.test(text);
