@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "build:all": "pnpm --filter \"!@klinpi/studio\" -r build",
-    "start": "pnpm --filter \"!./packages/contracts\" --filter \"!./packages/compute\" -r --parallel dev",
+    "dev": "pnpm --filter \"!./packages/compute\" -r --parallel dev",
     "test": "vitest",
     "dev:studio": "cd packages/studio && pnpm dev",
     "dev:gateway": "cd packages/gateway && pnpm run dev",
@@ -25,6 +25,7 @@
     "@types/node": "^26.1.2",
     "@types/supertest": "^7.2.1",
     "drizzle-orm": "^0.44.2",
+    "nodemon": "^3.1.14",
     "supertest": "^7.2.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
