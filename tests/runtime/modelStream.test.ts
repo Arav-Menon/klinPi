@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { sendChat } from "../../packages/runtime/src/model.js";
+import { modelConfig } from "../../packages/runtime/src/lib/modelConfig.js";
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse) => void;
 
@@ -41,6 +42,10 @@ describe("model provider streaming client", () => {
     });
 
     it("requests a streamed completion and assembles the final message", async () => {
+        // The configured chat model (CHAT_MODEL env / default) is what the
+        // runtime puts on every provider request.
+        expect(modelConfig.model).toBe("qwen3:8b");
+
         handler = (_req, res) => {
             res.writeHead(200, { "Content-Type": "text/event-stream" });
             res.write(
@@ -66,7 +71,7 @@ describe("model provider streaming client", () => {
             model?: string;
         };
         expect(request.stream).toBe(true);
-        expect(typeof request.model).toBe("string");
+        expect(request.model).toBe("qwen3:8b");
     });
 
     it("reassembles tool call arguments split across chunks", async () => {
