@@ -9,6 +9,7 @@ import {
 export const git_branch: AgentTool = {
     name: "git_branch",
     requiresSandbox: true,
+    capabilities: ["git.local"],
     description:
         "Create and switch to a new Git branch in the sandbox repository (/workspace), or switch to an existing branch. For Pull Request work this is the FIRST step: create a dedicated feature/fix branch before implementing changes instead of working on the default branch. Only as part of an explicit change or PR workflow — never for read-only requests. This tool only performs checkout — it does not stage, commit, or push.",
 
