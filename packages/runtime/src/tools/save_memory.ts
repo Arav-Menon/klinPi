@@ -14,6 +14,7 @@ const SCOPES: readonly string[] = ["global", "repository"];
 export function createSaveMemoryTool(context: ToolContext): AgentTool {
   return {
     name: "save_memory",
+    capabilities: ["memory"],
     description:
       "Save an important piece of information to long-term memory so it can be recalled in future conversations. Use it for durable facts: user preferences, standing instructions, key project/repository knowledge, and notable conclusions. Do NOT save transient details (current task steps, temporary file contents, or outputs already visible in the conversation). Saving is idempotent — identical content is deduplicated.",
 
