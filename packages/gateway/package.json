@@ -11,13 +11,15 @@
   },
   "keywords": [],
   "dependencies": {
-    "@klinpi/db": "workspace:*",
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1",
     "@klinpi/common": "workspace:*",
-    "drizzle-orm": "^0.44.2",
+    "@klinpi/db": "workspace:*",
+    "@klinpi/redis": "workspace:*",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "@klinpi/redis": "workspace:*",
+    "drizzle-orm": "^0.44.2",
     "express": "^5.2.1",
     "zod": "^3.25.67"
   },
