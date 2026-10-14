@@ -35,6 +35,7 @@ export function createEditFileTool(context: ToolContext): AgentTool {
     return {
         name: "edit_file",
         requiresSandbox: true,
+        capabilities: ["fs.write"],
         description:
             "Write content to a file in the agent's sandbox filesystem. Repository files live under /workspace and the path must be absolute (e.g. /workspace/Dockerfile). Preconditions enforced by this tool: the repository must already be inspected this run (list_files or a successful read_file), and an existing file under /workspace must have been read with read_file before it is overwritten — new files only need the prior inspection. Read the file, understand it, then write the complete new content. Do not use for read-only requests.",
 
