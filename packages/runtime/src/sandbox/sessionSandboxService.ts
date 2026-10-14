@@ -1,6 +1,7 @@
 import { Sandbox, createSandbox, sandboxManger } from "@klinpi/compute";
 import { getDb, schema } from "@klinpi/db";
 import { and, desc, eq } from "drizzle-orm";
+import { workspaceWatcherManager } from "../workspace/watcher.js";
 
 const SANDBOX_TTL_MS = 30 * 60 * 1000;
 const WORKSPACE_PATH = "/workspace";
@@ -45,6 +46,7 @@ export class SessionSandboxService {
             console.warn(
                 `[SessionSandbox] Existing sandbox ${row.providerSandboxId} is unavailable (${message}), marking DESTROYED`,
             );
+            void workspaceWatcherManager.stopWatching(sessionId);
             try {
                 await this.db
                     .update(schema.sandboxes)
@@ -98,6 +100,9 @@ export class SessionSandboxService {
                     branch,
                     onStatus,
                 });
+            } else {
+                // Empty workspace is ready as soon as the sandbox lives.
+                void workspaceWatcherManager.ensureWatching(sessionId, reusedId);
             }
             return reusedId;
         }
@@ -165,6 +170,9 @@ export class SessionSandboxService {
             console.error("[SessionSandbox] Failed to mark sandbox RUNNING:", error);
         }
 
+        // Workspace is prepared — arm the explorer's filesystem watcher.
+        void workspaceWatcherManager.ensureWatching(sessionId, sandboxId);
+
         return sandboxId;
     }
 
@@ -194,6 +202,7 @@ export class SessionSandboxService {
             console.log(
                 `[SessionSandbox] action=prepare-reuse sessionId=${sessionId} sandboxId=${sandboxId} workspace=${WORKSPACE_PATH} repositoryId=${repositoryId ?? "none"} repo=${cloneUrl} branch=${effectiveBranch} — repository already present`,
             );
+            void workspaceWatcherManager.ensureWatching(sessionId, sandboxId);
             return;
         }
 
@@ -229,6 +238,9 @@ export class SessionSandboxService {
                 error instanceof Error ? error.message : error,
             );
         }
+
+        // Clone succeeded — arm the explorer's filesystem watcher.
+        void workspaceWatcherManager.ensureWatching(sessionId, sandboxId);
     }
 
     private async runPrepare(
