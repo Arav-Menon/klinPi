@@ -13,6 +13,10 @@ import {
   missingWorkflowSteps,
   nextStepDirective,
 } from "./lib/workflowState.js";
+import {
+  deriveTaskScope,
+  selectToolsForScope,
+} from "./lib/taskScope.js";
 import { runLoop } from "./loop.js";
 import { callModelWithTools } from "./model.js";
 import { promptRequiresRepositoryFiles } from "./lib/repositoryGate.js";
@@ -261,6 +265,22 @@ export class Agent {
         workflow,
       });
 
+      // Task scope: what this request authorizes. Derived conservatively
+      // before any model call; the loop enforces it at the execution
+      // boundary for every tool call, independently of the model.
+      const taskScope = deriveTaskScope(prompt);
+      const scopedTools = selectToolsForScope(tools, taskScope);
+      console.log(
+        `[AgentScope] sessionId=${sessionId} objective="${taskScope.objective}" ` +
+          `capabilities=[${[...taskScope.capabilities].join(",")}] ` +
+          `budgets=[createIssue=${taskScope.budgets.createIssue.remaining},` +
+          `updateIssue=${taskScope.budgets.updateIssue.remaining},` +
+          `closeIssue=${taskScope.budgets.closeIssue.remaining},` +
+          `createPullRequest=${taskScope.budgets.createPullRequest.remaining},` +
+          `gitPush=${taskScope.budgets.gitPush.remaining}] ` +
+          `offered=${scopedTools.length}/${tools.length}`,
+      );
+
       const contextBuildStartedAt = Date.now();
       const context = this.contextBuilder.build({
         systemInstructions: this.systemInstructions,
@@ -270,7 +290,8 @@ export class Agent {
           content: m.content,
         })),
         memories,
-        availableTools: tools,
+        availableTools: scopedTools,
+        taskScopeNote: taskScope.summary,
         ...(repositoryContext ? { repositoryContext } : {}),
         ...(repositoryNote ? { repositoryNote } : {}),
       });
@@ -353,6 +374,7 @@ export class Agent {
       const loopInput: import("./loop.js").LoopInput = {
         messages: context.messages,
         tools,
+        taskScope,
         onEvent: wrappedOnEvent,
         modelFn: timedModelFn,
         sessionId,
