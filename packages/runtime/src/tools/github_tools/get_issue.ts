@@ -14,6 +14,7 @@ interface GetIssueArgs {
 export function createGetIssueTool(context: ToolContext): AgentTool {
   return {
     name: "get_issue",
+    capabilities: ["github.read"],
     description:
       "Retrieve a specific GitHub issue by issue number from a repository of the authenticated user's connected GitHub account. Returns structured information: number, title, body, state, url, labels, assignees, milestone, author and timestamps. If the given number is actually a pull request, the tool says so instead of returning it as an issue. Read-only.",
 
