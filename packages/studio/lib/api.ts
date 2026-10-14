@@ -252,3 +252,77 @@ export async function listGithubRepos(): Promise<
     throw err;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Workspace file explorer — mirror the gateway/runtime workspace      */
+/* contract (packages/contracts/workspace.proto).                      */
+/* ------------------------------------------------------------------ */
+
+export interface WorkspaceNodeDto {
+  name: string;
+  /** Path relative to the workspace root (no leading slash). */
+  path: string;
+  kind: "file" | "dir";
+  size: number;
+  children?: WorkspaceNodeDto[];
+}
+
+export interface WorkspaceTreeDto {
+  status: "ready" | "not_ready";
+  rootName: string;
+  entries: WorkspaceNodeDto[];
+  truncated: boolean;
+}
+
+export interface WorkspaceFileDto {
+  path: string;
+  content: string;
+  size: number;
+  encoding: string;
+}
+
+/** The session's sandbox workspace is not ready yet (no running sandbox). */
+export class WorkspaceNotReadyError extends Error {
+  constructor(message = "The sandbox workspace is not ready yet.") {
+    super(message);
+    this.name = "WorkspaceNotReadyError";
+  }
+}
+
+/**
+ * Initial (or refreshed) file tree for a session's sandbox workspace.
+ * Throws {@link WorkspaceNotReadyError} when the backend reports
+ * `status: "not_ready"` — the UI renders a dedicated waiting state.
+ */
+export async function getWorkspaceTree(
+  sessionId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<WorkspaceTreeDto> {
+  const data = (await apiRequest(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/workspace/tree`,
+    options.signal ? { signal: options.signal } : {},
+  )) as { workspace?: WorkspaceTreeDto };
+
+  const workspace = data.workspace;
+  if (!workspace) throw new Error("Couldn't load workspace files.");
+  if (workspace.status === "not_ready") throw new WorkspaceNotReadyError();
+  return workspace;
+}
+
+/**
+ * Contents of a single file in the session's workspace. `path` is relative
+ * to the workspace root; the gateway/runtime reject traversal attempts.
+ * 404 = missing/deleted, 413 = too large, 400 (+code BINARY) = binary.
+ */
+export async function getWorkspaceFile(
+  sessionId: string,
+  path: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<WorkspaceFileDto> {
+  const data = (await apiRequest(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/workspace/file?path=${encodeURIComponent(path)}`,
+    options.signal ? { signal: options.signal } : {},
+  )) as { file?: WorkspaceFileDto };
+  if (!data.file) throw new Error("Couldn't load the file.");
+  return data.file;
+}
