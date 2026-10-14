@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, getWsToken } from "@/lib/api";
+import type { WorkspaceFsEvent } from "@/app/lib/workspace-events";
 
 /**
  * Browser client for the existing realtime WebSocket server
@@ -14,7 +15,10 @@ import { ApiError, getWsToken } from "@/lib/api";
  *    `{type:"CALL_TO_AGENT", sessionId, userPrompt, repositoryId?}` (run)
  *  - server → client: `{type:"connected"}`, `{type:"error", message}`,
  *    `{type:"AGENT_EVENT", event:{ eventType, content, toolCall,
- *    toolResult, timestamp, sequence, ... }}`
+ *    toolResult, timestamp, sequence, ... }}`,
+ *    `{type:"WORKSPACE_EVENT", event:{ type, path?, oldPath?, newPath?,
+ *    timestamp, ... }}` (sandbox filesystem changes — published by the
+ *    runtime on the session channel and forwarded by the router)
  */
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8083";
@@ -97,6 +101,8 @@ export interface UseSessionSocketOptions {
   onServerError: (message: string) => void;
   /** The socket re-opened after a drop — reconcile persisted history. */
   onReconnected: () => void;
+  /** A `WORKSPACE_EVENT` frame arrived (sandbox filesystem changed). */
+  onWorkspaceEvent?: (event: WorkspaceFsEvent) => void;
 }
 
 export interface UseSessionSocketResult {
@@ -115,6 +121,7 @@ export function useSessionSocket({
   onEvent,
   onServerError,
   onReconnected,
+  onWorkspaceEvent,
 }: UseSessionSocketOptions): UseSessionSocketResult {
   const [status, setStatus] = useState<SocketStatus>("connecting");
   const [running, setRunning] = useState(false);
@@ -130,10 +137,12 @@ export function useSessionSocket({
   const onEventRef = useRef(onEvent);
   const onServerErrorRef = useRef(onServerError);
   const onReconnectedRef = useRef(onReconnected);
+  const onWorkspaceEventRef = useRef(onWorkspaceEvent);
   useEffect(() => {
     onEventRef.current = onEvent;
     onServerErrorRef.current = onServerError;
     onReconnectedRef.current = onReconnected;
+    onWorkspaceEventRef.current = onWorkspaceEvent;
   });
 
   const setRunningState = useCallback((value: boolean) => {
@@ -256,6 +265,11 @@ export function useSessionSocket({
           if (eventType === "AGENT_COMPLETED" || eventType === "AGENT_ERROR") {
             setRunningState(false);
           }
+          return;
+        }
+
+        if (frame.type === "WORKSPACE_EVENT" && frame.event) {
+          onWorkspaceEventRef.current?.(frame.event as WorkspaceFsEvent);
           return;
         }
 
