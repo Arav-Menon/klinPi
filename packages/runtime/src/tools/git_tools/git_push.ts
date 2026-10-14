@@ -17,7 +17,8 @@ export function createGitPushTool(context: ToolContext): AgentTool {
 
     return {
         name: "git_push",
-        requiresSandbox: true,
+    requiresSandbox: true,
+    capabilities: ["git.push"],
         description:
             "Push a local branch of the sandbox repository (/workspace) to its Git remote and set the upstream. Defaults to the current checked-out branch; pass 'branch' to push a specific local branch. Only when the user requested a push or PR workflow — never for read-only requests. The push MUST succeed before create_pull_request can be called — GitHub needs the branch to exist on the remote as the PR head. Uses the authenticated user's connected GitHub account; the caller never provides credentials or a user id.",
 
