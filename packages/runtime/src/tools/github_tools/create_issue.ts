@@ -111,8 +111,9 @@ export function createCreateIssueTool(context: ToolContext): AgentTool {
   return {
     name: "create_issue",
     githubMutation: true,
+    capabilities: ["github.create_issue"],
     description:
-      "Create an issue in a GitHub repository using the authenticated user's connected GitHub account. This tool ONLY performs the GitHub API issue creation operation — it does not touch the sandbox, modify repository files, create branches, run commands, or create pull requests. Generate a useful title and body from the user's request. The caller never provides credentials or a user id.",
+      "Create an issue in a GitHub repository using the authenticated user's connected GitHub account. This tool ALWAYS creates a NEW issue — to reopen a closed issue, use update_issue with state 'open' instead; never use create_issue to reopen. This tool ONLY performs the GitHub API issue creation operation — it does not touch the sandbox, modify repository files, create branches, run commands, or create pull requests. Generate a useful title and body from the user's request. The caller never provides credentials or a user id.",
 
     parameters: {
       type: "object",
