@@ -15,6 +15,7 @@ export function createCloseIssueTool(context: ToolContext): AgentTool {
   return {
     name: "close_issue",
     githubMutation: true,
+    capabilities: ["github.close_issue"],
     description:
       "Close an existing GitHub issue by setting its state to 'closed'. GitHub does not support deleting issues through this API, so closing is the delete-equivalent — use this tool when the user asks to delete or close an issue, and say that the issue was closed rather than deleted. The issue number must refer to a real issue, not a pull request.",
 
