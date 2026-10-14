@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 
@@ -19,6 +19,7 @@ import {
   type ConversationItem,
 } from "@/app/lib/agent-events";
 import { useSessionSocket, type AgentEvent } from "@/app/lib/ws";
+import { emitWorkspaceBus, type WorkspaceFsEvent } from "@/app/lib/workspace-events";
 import { useMediaQuery } from "@/app/lib/hooks";
 import { getSessionMessages } from "@/lib/api";
 
@@ -74,7 +75,16 @@ export function SessionWorkspace() {
     // Reconcile persisted history after a drop (missed messages were
     // persisted server-side; live tool rows are kept below).
     setHistoryVersion((v) => v + 1);
-  }, []);
+    // The workspace explorer re-snapshots its tree after a reconnect.
+    emitWorkspaceBus(sessionId, { kind: "reconnected" });
+  }, [sessionId]);
+
+  const handleWorkspaceEvent = useCallback(
+    (event: WorkspaceFsEvent) => {
+      emitWorkspaceBus(sessionId, { kind: "fs_event", event });
+    },
+    [sessionId],
+  );
 
   const socket = useSessionSocket({
     sessionId,
@@ -82,7 +92,17 @@ export function SessionWorkspace() {
     onEvent: handleEvent,
     onServerError: handleServerError,
     onReconnected: handleReconnected,
+    onWorkspaceEvent: handleWorkspaceEvent,
   });
+
+  // Mirror connection status onto the workspace bus so the explorer can
+  // surface "reconnecting…" without prop-drilling through the panel.
+  const lastSocketStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastSocketStatus.current === socket.status) return;
+    lastSocketStatus.current = socket.status;
+    emitWorkspaceBus(sessionId, { kind: "connection", status: socket.status });
+  }, [sessionId, socket.status]);
 
   // Load (and reconcile) persisted history from the gateway.
   useEffect(() => {
