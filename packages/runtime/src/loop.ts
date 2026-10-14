@@ -6,6 +6,13 @@ import type {
     ModelToolCall,
 } from "./types.js";
 import { recoverTextToolCalls } from "./lib/toolCallRecovery.js";
+import {
+    authorizeToolCall,
+    fullTaskScope,
+    recordMutationOutcome,
+    selectToolsForScope,
+} from "./lib/taskScope.js";
+import type { TaskScope } from "./lib/taskScope.js";
 
 export const MAX_ITERATIONS = 30;
 
@@ -34,6 +41,14 @@ export const MAX_CAPABILITY_CORRECTIONS = 2;
  * failing tool cannot loop.
  */
 export const MAX_TOOL_RETRY_NUDGES = 1;
+
+/**
+ * Max consecutive scope denials of the same tool before the loop stops
+ * asking the model to act within scope and accepts its next explanation.
+ * Keeps a model that ignores denials from looping while still letting it
+ * reformulate once.
+ */
+export const MAX_SCOPE_DENIALS = 2;
 
 /**
  * A model claim that a required tool does not exist / is not available.
@@ -270,6 +285,13 @@ export interface LoopInput {
      * retry budget so a blocked run can still terminate.
      */
     nudgeOnStop?: (content: string) => string | null;
+    /**
+     * What the user's request authorizes this run to do. When omitted the
+     * loop runs with a permissive full scope (back-compat for direct
+     * callers); `Agent.run` always derives and passes a real scope, and the
+     * loop enforces it for every tool call at the execution boundary.
+     */
+    taskScope?: TaskScope;
 }
 
 function convertToolsToOpenRouter(
@@ -295,13 +317,21 @@ function convertToolsToOpenRouter(
 export async function runLoop(input: LoopInput): Promise<void> {
     const { messages, tools, onEvent, modelFn } = input;
 
-    const openRouterTools = convertToolsToOpenRouter(tools);
+    const scope = input.taskScope ?? fullTaskScope();
     const conversation: LoopMessage[] = [...messages];
-    const toolNames = new Set(tools.map((tool) => tool.name));
+    // Full registry names: prose recovery and unknown-tool feedback speak
+    // about what EXISTS; availability and authorization are enforced
+    // separately below, so an out-of-scope call gets a scope denial, not a
+    // misleading "unknown tool" error.
+    const registryNames = new Set(tools.map((tool) => tool.name));
+    const offeredNames = (offered: AgentTool[]): string[] =>
+        offered.map((tool) => tool.name);
+    let offered = selectToolsForScope(tools, scope);
+    let offeredKey = offeredNames(offered).join(", ");
     // Names and count only — never arguments or secrets — so runs can be
     // verified against the model request in local diagnostics.
     console.log(
-        `[AgentLoop] tools(${tools.length}): ${[...toolNames].join(", ")}`,
+        `[AgentLoop] offered(${offered.length}): ${offeredKey}`,
     );
     // For tools with one obvious argument, a bare string written in prose
     // (`run_command("npm test")`) can be mapped onto that parameter.
@@ -321,12 +351,42 @@ export async function runLoop(input: LoopInput): Promise<void> {
     let toolRetryNudges = 0;
     // Failure of the most recent tool-call batch (null after a batch in
     // which every call succeeded). Drives the bounded retry nudge AND the
-    // GitHub-mutation gate below: while a failure is unresolved, the run is
-    // in recovery and an external mutation is never the way out.
+    // same-objective recovery rule below: while a failure is unresolved, a
+    // GitHub mutation is never the way out — but a retry of the FAILED
+    // tool itself stays allowed so a recoverable error can be corrected.
     let lastToolFailure: { toolName: string; message: string } | null = null;
+    // Consecutive scope denials per tool (cleared when that tool executes
+    // successfully). Denials are not failures: they never consume budget,
+    // never set lastToolFailure, and never execute the tool.
+    const denialCounts = new Map<string, number>();
+    // Set once the model has repeatedly tried a denied operation; the next
+    // prose answer is accepted as final instead of being nudged further.
+    let scopeStop = false;
+    let terminationReason = "max_iterations";
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-        let response = await modelFn(conversation, openRouterTools);
+        // Recompute availability from scope + budgets: a budget that was
+        // consumed (e.g. the one authorized issue was created) removes the
+        // tool from the next model request, and the change is announced so
+        // the model-facing inventory stays consistent.
+        const currentOffered = selectToolsForScope(tools, scope);
+        const currentKey = offeredNames(currentOffered).join(", ");
+        if (currentKey !== offeredKey) {
+            offered = currentOffered;
+            offeredKey = currentKey;
+            console.log(
+                `[AgentLoop] offered(${offered.length}): ${offeredKey || "(none)"}`,
+            );
+            conversation.push({
+                role: "system",
+                content:
+                    `Tool availability update: the tools available for this run are now: ` +
+                    `${offeredKey || "(none)"}. Earlier tool lists are superseded — do not ` +
+                    `call tools that are no longer offered.`,
+            });
+        }
+
+        let response = await modelFn(conversation, convertToolsToOpenRouter(offered));
 
         // Local models sometimes emit a tool call as message text (JSON or a
         // shell-style `run_command("...")`) instead of a structured
@@ -340,7 +400,7 @@ export async function runLoop(input: LoopInput): Promise<void> {
         ) {
             const recovered = recoverTextToolCalls(
                 response.content,
-                toolNames,
+                registryNames,
                 paramHints,
             );
             if (recovered) {
@@ -383,7 +443,7 @@ export async function runLoop(input: LoopInput): Promise<void> {
             // answers or truthful missing-context responses.
             if (
                 capabilityCorrections < MAX_CAPABILITY_CORRECTIONS &&
-                isFalseCapabilityRefusal(finalContent, toolNames.size > 0)
+                isFalseCapabilityRefusal(finalContent, registryNames.size > 0)
             ) {
                 capabilityCorrections += 1;
                 if (finalContent) {
@@ -411,8 +471,8 @@ export async function runLoop(input: LoopInput): Promise<void> {
                     role: "user",
                     content:
                         `That claim about tool availability is incorrect: verify it against the "Registered tools" list in your instructions. ` +
-                        `Tools registered for this run: ${[...toolNames].join(", ")}. ` +
-                        "The registered inventory is authoritative — never answer a capability question from conversation history. " +
+                        `Tools available for this run: ${offeredKey}. ` +
+                        "That inventory is authoritative — never answer a capability question from conversation history. " +
                         (originalRequest
                             ? `The user's current request is: "${originalRequest}". If that request requires one of these tools, emit that tool call now instead of replying with prose about tools, `
                             : "If the user's current request requires one of these tools, emit that tool call now instead of replying with prose about tools, ") +
@@ -463,6 +523,22 @@ export async function runLoop(input: LoopInput): Promise<void> {
                 continue;
             }
 
+            // The model has repeatedly proposed an operation outside the
+            // authorized scope. Accept its next explanation as final instead
+            // of nudging further — the denial messages already told it what
+            // IS authorized, and the objective cannot be closed by retrying.
+            if (scopeStop) {
+                if (response.content) {
+                    onEvent({
+                        type: "AGENT_MESSAGE",
+                        content: response.content,
+                    });
+                }
+                terminationReason = "scope_denied_stop";
+                console.log(`[AgentLoop] termination=${terminationReason}`);
+                return;
+            }
+
             // A model can stop while the requested work is still unfinished
             // (prose instead of the next tool call). Let the caller decide
             // whether to push the run forward one more time.
@@ -487,6 +563,8 @@ export async function runLoop(input: LoopInput): Promise<void> {
                     content: response.content,
                 });
             }
+            terminationReason = "final_answer";
+            console.log(`[AgentLoop] termination=${terminationReason}`);
             return;
         }
 
@@ -514,9 +592,10 @@ export async function runLoop(input: LoopInput): Promise<void> {
             const tool = tools.find((t) => t.name === toolCall.function.name);
 
             if (!tool) {
-                const errorMessage = `Unknown tool: ${toolCall.function.name}. Available tools: ${tools
-                    .map((tool) => tool.name)
-                    .join(", ")}`;
+                const errorMessage = `Unknown tool: ${toolCall.function.name}. Available tools: ${offeredKey}`;
+                console.log(
+                    `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${toolCall.function.name} decision=deny:unknown`,
+                );
                 batchFailure = {
                     toolName: toolCall.function.name,
                     message: errorMessage,
@@ -550,6 +629,9 @@ export async function runLoop(input: LoopInput): Promise<void> {
                 args = parsed;
             } catch {
                 const errorMessage = `Invalid JSON arguments for tool ${toolCall.function.name}: ${toolCall.function.arguments}`;
+                console.log(
+                    `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${toolCall.function.name} decision=deny:invalid_json`,
+                );
                 batchFailure = {
                     toolName: toolCall.function.name,
                     message: errorMessage,
@@ -577,6 +659,9 @@ export async function runLoop(input: LoopInput): Promise<void> {
             // an invalid call has no side effects at all.
             const validationError = validateToolArgs(tool, args);
             if (validationError !== null) {
+                console.log(
+                    `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${tool.name} decision=deny:invalid_schema`,
+                );
                 batchFailure = {
                     toolName: tool.name,
                     message: validationError,
@@ -597,30 +682,79 @@ export async function runLoop(input: LoopInput): Promise<void> {
                 continue;
             }
 
-            // Recovery gate: while the run is recovering from a failed call
+            // Task-scope authorization: the final safety boundary. Every
+            // call — including each call in a batch, independently — is
+            // validated against what the user's request authorized before
+            // any side effect. A denial never reaches the tool, never
+            // consumes budget, and never counts as a tool failure; it is a
+            // distinct state the model can read and correct against.
+            const authorization = authorizeToolCall(tool, args, scope);
+            if (!authorization.allowed) {
+                const denialCount = (denialCounts.get(tool.name) ?? 0) + 1;
+                denialCounts.set(tool.name, denialCount);
+                const denialMessage =
+                    `Denied by task scope: ${authorization.reason}. ` +
+                    `The tool was NOT executed and no argument was assumed. ` +
+                    `${scope.summary} Do not attempt ${tool.name} again for this request ` +
+                    `— continue only with authorized operations, or explain what the ` +
+                    `user needs to authorize explicitly.`;
+                console.log(
+                    `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${tool.name} decision=deny:scope`,
+                );
+                if (denialCount >= MAX_SCOPE_DENIALS) {
+                    scopeStop = true;
+                }
+                onEvent({
+                    type: "TOOL_RESULT",
+                    toolResult: {
+                        toolCallId: toolCall.id,
+                        output: denialMessage,
+                        isError: true,
+                    },
+                });
+                conversation.push({
+                    role: "tool",
+                    toolCallId: toolCall.id,
+                    content: denialMessage,
+                });
+                continue;
+            }
+
+            // Recovery rule: while the run is recovering from a failed call
             // (this batch or the previous one), a GitHub mutation is never
-            // the way out — a failure is resolved with a corrected or
-            // same-objective action (corrected path, list_files, retry),
-            // never with an unrelated external side effect. The blocked call
-            // returns its error to the model like any other rejection, and
-            // may be re-issued once a batch succeeds again. State-based, not
-            // keyword-based: intent selection stays with the model.
+            // the way out — EXCEPT a retry of the failed tool itself, which
+            // is the legitimate recovery path (e.g. create_issue failed on a
+            // 422, corrected args, retry). Unrelated mutations are blocked;
+            // the blocked call returns its error to the model like any other
+            // rejection. Scope authorization above still applies to every
+            // retry.
+            const failedToolNames = new Set(
+                [lastToolFailure?.toolName, batchFailure?.toolName].filter(
+                    (name): name is string => name !== undefined,
+                ),
+            );
             if (
                 tool.githubMutation === true &&
-                (lastToolFailure !== null || batchFailure !== null)
+                failedToolNames.size > 0 &&
+                !failedToolNames.has(tool.name)
             ) {
-                const priorFailure =
-                    lastToolFailure !== null
-                        ? ` ("${lastToolFailure.toolName}": ${lastToolFailure.message.slice(0, 200)})`
-                        : "";
+                const priorFailure = lastToolFailure
+                    ? ` ("${lastToolFailure.toolName}": ${lastToolFailure.message.slice(0, 200)})`
+                    : batchFailure
+                      ? ` ("${batchFailure.toolName}": ${batchFailure.message.slice(0, 200)})`
+                      : "";
+                const retryable = [...failedToolNames].join(", ");
                 const blockMessage: string =
                     `Blocked: ${tool.name} is a GitHub mutation and this run is still ` +
                     `recovering from a failed tool call` +
                     priorFailure +
                     `. Resolve that failure first with the same objective (correct the failed ` +
                     `call's arguments, or use list_files / a corrected read to find the right ` +
-                    `path) — never with an issue, PR, or other mutation. If the user's request ` +
-                    `requires ${tool.name}, call it again after the failure is resolved.`;
+                    `path) — never with an issue, PR, or other mutation. A retry of ` +
+                    `${retryable} itself with corrected arguments IS allowed.`;
+                console.log(
+                    `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${tool.name} decision=deny:recovery`,
+                );
                 batchFailure = {
                     toolName: tool.name,
                     message: blockMessage,
@@ -640,6 +774,10 @@ export async function runLoop(input: LoopInput): Promise<void> {
                 });
                 continue;
             }
+
+            console.log(
+                `[AgentLoop] iteration=${iteration} callId=${toolCall.id} tool=${tool.name} decision=allow`,
+            );
 
             if (tool.requiresSandbox) {
                 if (!sandboxId && input.createSandbox) {
@@ -665,8 +803,17 @@ export async function runLoop(input: LoopInput): Promise<void> {
 
             // Tools report failures as "Error …" strings (isError only
             // covers timeouts/crashes), so the nudge keys off both.
-            if (timedOut || failed || /^\s*error\b/i.test(resultString)) {
+            const callFailed =
+                timedOut || failed || /^\s*error\b/i.test(resultString);
+            if (callFailed) {
                 batchFailure = { toolName: tool.name, message: resultString };
+            } else {
+                // A successful execution clears this tool's denial streak
+                // and consumes any scope budget it was authorized under —
+                // failed calls never consume budget, so a corrected retry
+                // of the same objective stays in scope.
+                denialCounts.delete(tool.name);
+                recordMutationOutcome(scope, tool, true);
             }
 
             onEvent({
@@ -692,4 +839,5 @@ export async function runLoop(input: LoopInput): Promise<void> {
         type: "AGENT_ERROR",
         content: `Max iterations (${MAX_ITERATIONS}) reached`,
     });
+    console.log(`[AgentLoop] termination=${terminationReason}`);
 }
