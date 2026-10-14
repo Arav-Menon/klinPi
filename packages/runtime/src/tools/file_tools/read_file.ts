@@ -7,6 +7,7 @@ export function createReadFileTool(context: ToolContext): AgentTool {
     return {
         name: "read_file",
         requiresSandbox: true,
+        capabilities: ["fs.read"],
         description:
             "Read the contents of a file from the agent's sandbox filesystem. Repository files live under /workspace. When the file is not at the repository root, locate it first with list_files and then read its exact path (e.g. main.py may be /workspace/basic-crud/main.py). Required before overwriting an existing repository file: edit_file refuses to change a file that has not been read with this tool first. Only for files the user asked to change or inspect — never as busywork.",
 
