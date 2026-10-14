@@ -7,6 +7,7 @@ export function createListFilesTool(context: ToolContext): AgentTool {
     return {
         name: "list_files",
         requiresSandbox: true,
+        capabilities: ["fs.read"],
         description:
             "List files and directories inside the agent's sandbox filesystem. Repository files live under /workspace (this is the default path). This is the discovery step: list the repository before modifying anything — a successful listing marks the repository as inspected, which edit_file requires before it will change files.",
 
