@@ -4,6 +4,7 @@ import { sandboxManger } from "@klinpi/compute";
 export const clone_repo: AgentTool = {
     name: "clone_repo",
     requiresSandbox: true,
+    capabilities: ["fs.write"],
     description: "Clone a Git repository into the sandbox filesystem",
 
     parameters: {
