@@ -165,6 +165,7 @@ function findWorkspaceWrites(command: string, cwd: string): string[] {
 export const run_command: AgentTool = {
   name: "run_command",
   requiresSandbox: true,
+  capabilities: ["shell"],
   // Builds and test suites legitimately run for minutes; the loop-level
   // budget matches the E2B command timeout passed by runShell.
   timeoutMs: 600_000,
