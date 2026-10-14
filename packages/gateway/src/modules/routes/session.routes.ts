@@ -8,6 +8,10 @@ import {
   getRecentSessions,
   searchSessions,
 } from "../controller/session.controller.js";
+import {
+  getWorkspaceTree,
+  getWorkspaceFile,
+} from "../controller/workspace.controller.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { validate } from "../../middleware/validate.js";
 import { validateQuery } from "../../middleware/validateQuery.js";
@@ -18,6 +22,7 @@ import {
   searchSessionsSchema,
   messagesQuerySchema,
 } from "../../types/validation/session/session.schema.js";
+import { workspaceFileQuerySchema } from "../../types/validation/workspace/workspace.schema.js";
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -26,6 +31,8 @@ router.get("/recent", authMiddleware, validateQuery(recentSessionsSchema), getRe
 router.get("/search", authMiddleware, validateQuery(searchSessionsSchema), searchSessions);
 router.get("/:sessionId", authMiddleware, getSession);
 router.get("/:sessionId/messages", authMiddleware, validateQuery(messagesQuerySchema), getSessionMessages);
+router.get("/:sessionId/workspace/tree", authMiddleware, getWorkspaceTree);
+router.get("/:sessionId/workspace/file", authMiddleware, validateQuery(workspaceFileQuerySchema), getWorkspaceFile);
 router.patch("/:sessionId", authMiddleware, validate(updateSessionSchema), updateSession);
 router.delete("/:sessionId", authMiddleware, archiveSession);
 
